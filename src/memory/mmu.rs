@@ -190,7 +190,6 @@ impl MemoryBus {
                 // If transfer was requested (bit 7 was set), output the data
                 if value & 0x80 != 0 {
                     let data = self.io[0x01];
-                    eprintln!("DEBUG: Serial output character: {:?} (0x{:02X})", data as char, data);
                     // Output character to serial log file if enabled
                     MemoryBus::write_serial_char(data as char);
                 }
@@ -690,5 +689,45 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         bus.cgb_mode = true;
         assert!(bus.cgb_mode);
+    }
+
+    #[test]
+    fn test_serial_output() {
+        use std::fs::OpenOptions;
+
+        // Create a temp file for serial output
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join(format!("gb_serial_test_{}.txt", std::process::id()));
+
+        // Create bus and set up serial log
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Set the serial log file
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)
+            .expect("Failed to open temp file");
+        MemoryBus::set_serial_log_file(Some(std::sync::Arc::new(std::sync::Mutex::new(file))));
+
+        // Write data to SB register
+        bus.write(0xFF01, 0x41); // 'A'
+
+        // Write to SC register with bit 7 set (start transfer)
+        bus.write(0xFF02, 0x80);
+
+        // Give the thread time to write
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Read the file
+        let content = std::fs::read_to_string(&temp_path)
+            .expect("Failed to read temp file");
+
+        // Verify 'A' was written
+        assert!(content.contains('A'), "Serial log should contain 'A', got: {}", content);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_path);
     }
 }
