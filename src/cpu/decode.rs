@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(bytes, 3);
 
         // DE
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x11);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x11);
         match instr {
             Instruction::LdR16Imm16 { dest, value } => {
                 assert_eq!(dest, R16Register::DE);
@@ -365,7 +365,7 @@ mod tests {
         }
 
         // HL
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x21);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x21);
         match instr {
             Instruction::LdR16Imm16 { dest, value } => {
                 assert_eq!(dest, R16Register::HL);
@@ -375,7 +375,7 @@ mod tests {
         }
 
         // SP
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x31);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x31);
         match instr {
             Instruction::LdR16Imm16 { dest, value } => {
                 assert_eq!(dest, R16Register::SP);
@@ -530,7 +530,7 @@ mod tests {
         assert_eq!(bytes, 2);
 
         // LD C, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x0E);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x0E);
         match instr {
             Instruction::LdR8Imm8 { dest, value } => {
                 assert_eq!(dest, R8Register::C);
@@ -540,7 +540,7 @@ mod tests {
         }
 
         // LD A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x3E);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x3E);
         match instr {
             Instruction::LdR8Imm8 { dest, value } => {
                 assert_eq!(dest, R8Register::A);
@@ -595,7 +595,7 @@ mod tests {
         assert_eq!(bytes, 2);
 
         // JR NZ, r8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x20);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x20);
         match instr {
             Instruction::JrCondImm8 { cond, offset } => {
                 assert_eq!(cond, Condition::NZ);
@@ -605,7 +605,7 @@ mod tests {
         }
 
         // JR Z, r8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x28);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x28);
         match instr {
             Instruction::JrCondImm8 { cond, offset } => {
                 assert_eq!(cond, Condition::Z);
@@ -615,7 +615,7 @@ mod tests {
         }
 
         // JR NC, r8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x30);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x30);
         match instr {
             Instruction::JrCondImm8 { cond, offset } => {
                 assert_eq!(cond, Condition::NC);
@@ -625,7 +625,7 @@ mod tests {
         }
 
         // JR C, r8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x38);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0x38);
         match instr {
             Instruction::JrCondImm8 { cond, offset } => {
                 assert_eq!(cond, Condition::C);
@@ -795,7 +795,7 @@ mod tests {
         assert_eq!(bytes, 3);
 
         // JP NZ, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xC2);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xC2);
         match instr {
             Instruction::JpCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::NZ);
@@ -805,7 +805,7 @@ mod tests {
         }
 
         // JP Z, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xCA);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xCA);
         match instr {
             Instruction::JpCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::Z);
@@ -815,7 +815,7 @@ mod tests {
         }
 
         // JP NC, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xD2);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xD2);
         match instr {
             Instruction::JpCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::NC);
@@ -825,7 +825,7 @@ mod tests {
         }
 
         // JP C, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDA);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDA);
         match instr {
             Instruction::JpCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::C);
@@ -856,7 +856,7 @@ mod tests {
         assert_eq!(bytes, 3);
 
         // CALL NZ, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xC4);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xC4);
         match instr {
             Instruction::CallCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::NZ);
@@ -866,7 +866,7 @@ mod tests {
         }
 
         // CALL Z, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xCC);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xCC);
         match instr {
             Instruction::CallCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::Z);
@@ -876,7 +876,7 @@ mod tests {
         }
 
         // CALL NC, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xD4);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xD4);
         match instr {
             Instruction::CallCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::NC);
@@ -886,7 +886,7 @@ mod tests {
         }
 
         // CALL C, a16
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDC);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDC);
         match instr {
             Instruction::CallCondImm16 { cond, address } => {
                 assert_eq!(cond, Condition::C);
@@ -1014,7 +1014,7 @@ mod tests {
         assert_eq!(bytes, 2);
 
         // ADC A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xCE);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xCE);
         match instr {
             Instruction::AdcAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1023,7 +1023,7 @@ mod tests {
         }
 
         // SUB A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xD6);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xD6);
         match instr {
             Instruction::SubAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1032,7 +1032,7 @@ mod tests {
         }
 
         // SBC A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDE);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDE);
         match instr {
             Instruction::SbcAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1041,7 +1041,7 @@ mod tests {
         }
 
         // AND A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xE6);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xE6);
         match instr {
             Instruction::AndAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1050,7 +1050,7 @@ mod tests {
         }
 
         // XOR A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xEE);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xEE);
         match instr {
             Instruction::XorAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1059,7 +1059,7 @@ mod tests {
         }
 
         // OR A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xF6);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xF6);
         match instr {
             Instruction::OrAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1068,7 +1068,7 @@ mod tests {
         }
 
         // CP A, d8
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xFE);
+        let (instr, _bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xFE);
         match instr {
             Instruction::CpAImm8 { value } => {
                 assert_eq!(value, 0x42);
@@ -1169,7 +1169,7 @@ mod tests {
         assert_eq!(instr, Instruction::LdhAC);
         assert_eq!(bytes, 1);
 
-        let (instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDC);
+        let (_instr, bytes) = decode_instruction(&crate::cpu::CPUState::new(), &bus, 0x0000, 0xDC);
         assert_eq!(bytes, 3); // CALL C, a16
     }
 
