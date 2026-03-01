@@ -95,6 +95,9 @@ pub enum Instruction {
     LdSpHl,
     DI,
     EI,
+
+    // CB-prefixed instructions
+    CB { cb_instr: CBInstruction },
 }
 
 /// R8Register: 8-bit registers
@@ -170,7 +173,7 @@ impl R16Register {
 }
 
 /// R16Mem: 16-bit memory operands for LD instructions
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum R16Mem {
     BC,
     DE,
@@ -191,7 +194,7 @@ impl R16Mem {
 }
 
 /// Condition codes for conditional instructions
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Condition {
     NZ, // Not zero
     Z,  // Zero
@@ -221,7 +224,7 @@ impl Condition {
 }
 
 /// R16Stk: 16-bit stack registers
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum R16Stk {
     BC,
     DE,
@@ -251,7 +254,7 @@ impl R16Stk {
 }
 
 /// CB-prefixed instructions (rotate, shift, bit operations)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CBInstruction {
     RLCR8 { reg: R8Register },
     RRCR8 { reg: R8Register },
@@ -269,19 +272,33 @@ pub enum CBInstruction {
 impl CBInstruction {
     pub fn from_byte(_opcode: u8, cb_opcode: u8) -> Self {
         let reg = R8Register::from_byte(cb_opcode);
-        match cb_opcode & 0xC7 {
+        match cb_opcode & 0xF8 {
             0x00 => CBInstruction::RLCR8 { reg },
-            0x01 => CBInstruction::RRCR8 { reg },
-            0x02 => CBInstruction::RLR8 { reg },
-            0x03 => CBInstruction::RRR8 { reg },
-            0x04 => CBInstruction::SLAR8 { reg },
-            0x05 => CBInstruction::SRAR8 { reg },
-            0x06 => CBInstruction::SWAPR8 { reg },
-            0x07 => CBInstruction::SRLR8 { reg },
-            0x40 => CBInstruction::BITBR8 { bit: (cb_opcode >> 4) & 0x07, reg },
-            0x80 => CBInstruction::RESBR8 { bit: (cb_opcode >> 4) & 0x07, reg },
-            0xC0 => CBInstruction::SETBR8 { bit: (cb_opcode >> 4) & 0x07, reg },
-            _ => panic!("Invalid CB instruction: {:02X}", cb_opcode),
+            0x08 => CBInstruction::RRCR8 { reg },
+            0x10 => CBInstruction::RLR8 { reg },
+            0x18 => CBInstruction::RRR8 { reg },
+            0x20 => CBInstruction::SLAR8 { reg },
+            0x28 => CBInstruction::SRAR8 { reg },
+            0x30 => CBInstruction::SWAPR8 { reg },
+            0x38 => CBInstruction::SRLR8 { reg },
+            _ => {
+                // BIT (0x40-0x7F), RES (0x80-0xBF), SET (0xC0-0xFF)
+                // All have D7-D5 = 0b01x or 0b1xx, so we check D7 and D6
+                let is_bit = (cb_opcode & 0xC0) == 0x40; // D7=0, D6=1
+                let is_res = (cb_opcode & 0xC0) == 0x80; // D7=1, D6=0
+                let is_set = (cb_opcode & 0xC0) == 0xC0; // D7=1, D6=1
+                let bit = (cb_opcode >> 3) & 0x07;
+
+                if is_bit {
+                    CBInstruction::BITBR8 { bit, reg }
+                } else if is_res {
+                    CBInstruction::RESBR8 { bit, reg }
+                } else if is_set {
+                    CBInstruction::SETBR8 { bit, reg }
+                } else {
+                    panic!("Invalid CB instruction: {:02X}", cb_opcode);
+                }
+            }
         }
     }
 }
@@ -298,10 +315,221 @@ mod tests {
     }
 
     #[test]
+    fn test_r8_register_to_byte() {
+        assert_eq!(R8Register::B.to_byte(), 0x00);
+        assert_eq!(R8Register::C.to_byte(), 0x01);
+        assert_eq!(R8Register::D.to_byte(), 0x02);
+        assert_eq!(R8Register::E.to_byte(), 0x03);
+        assert_eq!(R8Register::H.to_byte(), 0x04);
+        assert_eq!(R8Register::L.to_byte(), 0x05);
+        assert_eq!(R8Register::HL.to_byte(), 0x06);
+        assert_eq!(R8Register::A.to_byte(), 0x07);
+    }
+
+    #[test]
+    fn test_r8_register_from_all_encoding_positions() {
+        // Each register appears in multiple positions in the opcode
+        // D7-D6 D5-D4 D2-D0 encode the register
+        // For LD r8, r8: dddddd = dddddd (source and dest)
+
+        // Test B register (ddd=000)
+        assert_eq!(R8Register::from_byte(0x00), R8Register::B); // 00000000
+        assert_eq!(R8Register::from_byte(0x40), R8Register::B); // 01000000 (LD B,B)
+        assert_eq!(R8Register::from_byte(0x80), R8Register::B); // 10000000 (ADD A,B)
+        assert_eq!(R8Register::from_byte(0xC0), R8Register::B); // 11000000 (RET NZ)
+
+        // Test C register (ddd=001)
+        assert_eq!(R8Register::from_byte(0x01), R8Register::C);
+        assert_eq!(R8Register::from_byte(0x41), R8Register::C);
+        assert_eq!(R8Register::from_byte(0x81), R8Register::C);
+        assert_eq!(R8Register::from_byte(0xC1), R8Register::C);
+
+        // Test A register (ddd=111)
+        assert_eq!(R8Register::from_byte(0x07), R8Register::A);
+        assert_eq!(R8Register::from_byte(0x47), R8Register::A);
+        assert_eq!(R8Register::from_byte(0x87), R8Register::A);
+        assert_eq!(R8Register::from_byte(0xC7), R8Register::A);
+    }
+
+    #[test]
     fn test_r16_register() {
         assert_eq!(R16Register::from_byte(0x01), R16Register::BC);
         assert_eq!(R16Register::from_byte(0x11), R16Register::DE);
         assert_eq!(R16Register::from_byte(0x21), R16Register::HL);
         assert_eq!(R16Register::from_byte(0x31), R16Register::SP);
+    }
+
+    #[test]
+    fn test_r16_register_to_byte() {
+        assert_eq!(R16Register::BC.to_byte(), 0x00);
+        assert_eq!(R16Register::DE.to_byte(), 0x10);
+        assert_eq!(R16Register::HL.to_byte(), 0x20);
+        assert_eq!(R16Register::SP.to_byte(), 0x30);
+    }
+
+    #[test]
+    fn test_r16_register_from_all_encoding_positions() {
+        // LD r16,imm16 uses dd bits for register
+        assert_eq!(R16Register::from_byte(0x01), R16Register::BC); // 00000001
+        assert_eq!(R16Register::from_byte(0x11), R16Register::DE); // 00010001
+        assert_eq!(R16Register::from_byte(0x21), R16Register::HL); // 00100001
+        assert_eq!(R16Register::from_byte(0x31), R16Register::SP); // 00110001
+    }
+
+    #[test]
+    fn test_r16mem() {
+        assert_eq!(R16Mem::from_byte(0x00), R16Mem::BC);
+        assert_eq!(R16Mem::from_byte(0x10), R16Mem::DE);
+        assert_eq!(R16Mem::from_byte(0x20), R16Mem::HLPlus);
+        assert_eq!(R16Mem::from_byte(0x30), R16Mem::HLMinus);
+    }
+
+    #[test]
+    fn test_condition() {
+        assert_eq!(Condition::from_byte(0xC0), Condition::NZ); // 11000000
+        assert_eq!(Condition::from_byte(0xC8), Condition::Z);  // 11001000
+        assert_eq!(Condition::from_byte(0xD0), Condition::NC); // 11010000
+        assert_eq!(Condition::from_byte(0xD8), Condition::C);  // 11011000
+    }
+
+    #[test]
+    fn test_condition_to_byte() {
+        assert_eq!(Condition::NZ.to_byte(), 0x00);
+        assert_eq!(Condition::Z.to_byte(), 0x08);
+        assert_eq!(Condition::NC.to_byte(), 0x10);
+        assert_eq!(Condition::C.to_byte(), 0x18);
+    }
+
+    #[test]
+    fn test_r16stk() {
+        assert_eq!(R16Stk::from_byte(0xC1), R16Stk::BC); // 11000001 (POP BC)
+        assert_eq!(R16Stk::from_byte(0xD1), R16Stk::DE); // 11010001 (POP DE)
+        assert_eq!(R16Stk::from_byte(0xE1), R16Stk::HL); // 11100001 (POP HL)
+        assert_eq!(R16Stk::from_byte(0xF1), R16Stk::AF); // 11110001 (POP AF)
+    }
+
+    #[test]
+    fn test_r16stk_to_byte() {
+        assert_eq!(R16Stk::BC.to_byte(), 0x00);
+        assert_eq!(R16Stk::DE.to_byte(), 0x10);
+        assert_eq!(R16Stk::HL.to_byte(), 0x20);
+        assert_eq!(R16Stk::AF.to_byte(), 0x30);
+    }
+
+    #[test]
+    fn test_cb_instruction() {
+        // RLC instructions
+        match CBInstruction::from_byte(0xCB, 0x00) {
+            CBInstruction::RLCR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected RLCR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x07) {
+            CBInstruction::RLCR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected RLCR8"),
+        }
+
+        // RRC instructions
+        match CBInstruction::from_byte(0xCB, 0x08) {
+            CBInstruction::RRCR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected RRCR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x0F) {
+            CBInstruction::RRCR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected RRCR8"),
+        }
+
+        // RL instructions
+        match CBInstruction::from_byte(0xCB, 0x10) {
+            CBInstruction::RLR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected RLR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x17) {
+            CBInstruction::RLR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected RLR8"),
+        }
+
+        // RR instructions
+        match CBInstruction::from_byte(0xCB, 0x18) {
+            CBInstruction::RRR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected RRR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x1F) {
+            CBInstruction::RRR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected RRR8"),
+        }
+
+        // SLA instructions
+        match CBInstruction::from_byte(0xCB, 0x20) {
+            CBInstruction::SLAR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected SLAR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x27) {
+            CBInstruction::SLAR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected SLAR8"),
+        }
+
+        // SRA instructions
+        match CBInstruction::from_byte(0xCB, 0x28) {
+            CBInstruction::SRAR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected SRAR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x2F) {
+            CBInstruction::SRAR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected SRAR8"),
+        }
+
+        // SWAP instructions
+        match CBInstruction::from_byte(0xCB, 0x30) {
+            CBInstruction::SWAPR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected SWAPR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x37) {
+            CBInstruction::SWAPR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected SWAPR8"),
+        }
+
+        // SRL instructions
+        match CBInstruction::from_byte(0xCB, 0x38) {
+            CBInstruction::SRLR8 { reg } => assert_eq!(reg, R8Register::B),
+            _ => panic!("Expected SRLR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x3F) {
+            CBInstruction::SRLR8 { reg } => assert_eq!(reg, R8Register::A),
+            _ => panic!("Expected SRLR8"),
+        }
+
+        // BIT instructions
+        match CBInstruction::from_byte(0xCB, 0x40) {
+            CBInstruction::BITBR8 { bit, reg } => {
+                assert_eq!(bit, 0);
+                assert_eq!(reg, R8Register::B);
+            }
+            _ => panic!("Expected BITBR8"),
+        }
+        match CBInstruction::from_byte(0xCB, 0x47) {
+            CBInstruction::BITBR8 { bit, reg } => {
+                assert_eq!(bit, 0);
+                assert_eq!(reg, R8Register::A);
+            }
+            _ => panic!("Expected BITBR8"),
+        }
+
+        // RES instructions
+        match CBInstruction::from_byte(0xCB, 0x80) {
+            CBInstruction::RESBR8 { bit, reg } => {
+                assert_eq!(bit, 0);
+                assert_eq!(reg, R8Register::B);
+            }
+            _ => panic!("Expected RESBR8"),
+        }
+
+        // SET instructions
+        match CBInstruction::from_byte(0xCB, 0xC0) {
+            CBInstruction::SETBR8 { bit, reg } => {
+                assert_eq!(bit, 0);
+                assert_eq!(reg, R8Register::B);
+            }
+            _ => panic!("Expected SETBR8"),
+        }
     }
 }

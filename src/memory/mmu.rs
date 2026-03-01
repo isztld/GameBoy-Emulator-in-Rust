@@ -291,7 +291,7 @@ impl MemoryBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    
     #[test]
     fn test_memory_bus_create() {
         let rom = vec![0; 32768]; // 32 KiB ROM
@@ -319,5 +319,345 @@ mod tests {
         // Test OAM
         bus.write(0xFE00, 0x10);
         assert_eq!(bus.read(0xFE00), 0x10);
+    }
+
+    #[test]
+    fn test_vram_read_write() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Test VRAM write and read
+        bus.write(0x8000, 0xAB);
+        assert_eq!(bus.read(0x8000), 0xAB);
+        assert_eq!(bus.vram[0], 0xAB);
+
+        bus.write(0x9FFF, 0xCD);
+        assert_eq!(bus.read(0x9FFF), 0xCD);
+        assert_eq!(bus.vram[8191], 0xCD);
+    }
+
+    #[test]
+    fn test_external_ram_read_write() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Test external RAM write and read
+        bus.write(0xA000, 0xEF);
+        assert_eq!(bus.read(0xA000), 0xEF);
+        assert_eq!(bus.external_ram[0], 0xEF);
+
+        bus.write(0xBFFF, 0x12);
+        assert_eq!(bus.read(0xBFFF), 0x12);
+        assert_eq!(bus.external_ram[8191], 0x12);
+    }
+
+    #[test]
+    fn test_wram_read_write() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Test WRAM bank 0
+        bus.write(0xC000, 0x34);
+        assert_eq!(bus.read(0xC000), 0x34);
+        assert_eq!(bus.wram[0], 0x34);
+
+        // Test WRAM bank 1 (D000-DFFF)
+        bus.write(0xD000, 0x56);
+        assert_eq!(bus.read(0xD000), 0x56);
+        assert_eq!(bus.wram[4096], 0x56);
+    }
+
+    #[test]
+    fn test_echo_ram() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Echo RAM (E000-FDFF) mirrors C000-DDFF
+        bus.write(0xC000, 0x78);
+        assert_eq!(bus.read(0xE000), 0x78); // Echo RAM should read same
+
+        bus.write(0xE000, 0x9A);
+        assert_eq!(bus.read(0xC000), 0x9A); // Writing to echo RAM also writes to original
+        assert_eq!(bus.wram[0], 0x9A);
+    }
+
+    #[test]
+    fn test_hram_read_write() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Test HRAM (FF80-FFFE)
+        bus.write(0xFF80, 0xBC);
+        assert_eq!(bus.read(0xFF80), 0xBC);
+        assert_eq!(bus.hram[0], 0xBC);
+
+        bus.write(0xFFFE, 0xDE);
+        assert_eq!(bus.read(0xFFFE), 0xDE);
+        assert_eq!(bus.hram[126], 0xDE);
+    }
+
+    #[test]
+    fn test_ie_register() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Test IE register at FFFF
+        bus.write(0xFFFF, 0x3F);
+        assert_eq!(bus.read(0xFFFF), 0x3F);
+        assert_eq!(bus.ie, 0x3F);
+
+        bus.write(0xFFFF, 0x00);
+        assert_eq!(bus.read(0xFFFF), 0x00);
+    }
+
+    #[test]
+    fn test_io_registers_initial_state() {
+        let bus = MemoryBus::new(vec![0; 32768]);
+
+        assert_eq!(bus.io[0x00], 0xCF); // P1/JOYP
+        assert_eq!(bus.io[0x04], 0x00); // DIV
+        assert_eq!(bus.io[0x07], 0xF8); // TAC
+        assert_eq!(bus.io[0x0F], 0xE1); // IF
+        assert_eq!(bus.io[0x10], 0x80); // NR10
+        assert_eq!(bus.io[0x11], 0xBF); // NR11
+        assert_eq!(bus.io[0x12], 0xF3); // NR12
+        assert_eq!(bus.io[0x13], 0xFF); // NR13
+        assert_eq!(bus.io[0x14], 0xBF); // NR14
+        assert_eq!(bus.io[0x16], 0x3F); // NR21
+        assert_eq!(bus.io[0x17], 0x00); // NR22
+        assert_eq!(bus.io[0x18], 0xFF); // NR23
+        assert_eq!(bus.io[0x19], 0xBF); // NR24
+        assert_eq!(bus.io[0x1A], 0x7F); // NR30
+        assert_eq!(bus.io[0x1B], 0xFF); // NR31
+        assert_eq!(bus.io[0x1C], 0x9F); // NR32
+        assert_eq!(bus.io[0x1D], 0xFF); // NR33
+        assert_eq!(bus.io[0x1E], 0xBF); // NR34
+        assert_eq!(bus.io[0x20], 0xFF); // NR41
+        assert_eq!(bus.io[0x21], 0x00); // NR42
+        assert_eq!(bus.io[0x22], 0x00); // NR43
+        assert_eq!(bus.io[0x23], 0xBF); // NR44
+        assert_eq!(bus.io[0x24], 0x77); // NR50
+        assert_eq!(bus.io[0x25], 0xF3); // NR51
+        assert_eq!(bus.io[0x26], 0xF1); // NR52
+        assert_eq!(bus.io[0x40], 0x91); // LCDC
+        assert_eq!(bus.io[0x41], 0x85); // STAT
+        assert_eq!(bus.io[0x44], 0x00); // LY
+        assert_eq!(bus.io[0x45], 0x00); // LYC
+        assert_eq!(bus.io[0x46], 0xFF); // DMA
+        assert_eq!(bus.io[0x47], 0xFC); // BGP
+        assert_eq!(bus.io[0x4A], 0x00); // WY
+        assert_eq!(bus.io[0x4B], 0x00); // WX
+    }
+
+    #[test]
+    fn test_io_register_write() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Write to LCDC
+        bus.write(0xFF40, 0x91);
+        assert_eq!(bus.io[0x40], 0x91);
+
+        // Write to SCY
+        bus.write(0xFF42, 0x10);
+        assert_eq!(bus.io[0x42], 0x10);
+
+        // Write to SCX
+        bus.write(0xFF43, 0x20);
+        assert_eq!(bus.io[0x43], 0x20);
+
+        // Write to LYC
+        bus.write(0xFF45, 0x30);
+        assert_eq!(bus.io[0x45], 0x30);
+    }
+
+    #[test]
+    fn test_io_register_read_only() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // LY is read-only
+        let initial_ly = bus.io[0x44];
+        bus.write(0xFF44, 0xFF); // Should have no effect
+        assert_eq!(bus.read(0xFF44), initial_ly);
+    }
+
+    #[test]
+    fn test_oam_dma() {
+        let mut rom = vec![0; 32768];
+        // Set up source data for OAM DMA
+        rom[0xD000] = 0x01; // Sprite Y
+        rom[0xD001] = 0x10; // Sprite X
+        rom[0xD002] = 0x02; // Tile
+        rom[0xD003] = 0x03; // Attributes
+        for i in 4..160 {
+            rom[0xD000 + i] = (i as u8) & 0xFF;
+        }
+
+        let mut bus = MemoryBus::new(rom);
+
+        // Start OAM DMA from $D000
+        bus.write(0xFF46, 0xD0);
+
+        // Check OAM was loaded
+        assert_eq!(bus.oam[0], 0x01);
+        assert_eq!(bus.oam[1], 0x10);
+        assert_eq!(bus.oam[2], 0x02);
+        assert_eq!(bus.oam[3], 0x03);
+    }
+
+    #[test]
+    fn test_oam_read_write() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Write to OAM
+        bus.write(0xFE00, 0x50); // Y position
+        assert_eq!(bus.read(0xFE00), 0x50);
+
+        bus.write(0xFE9F, 0x9F); // Last OAM entry
+        assert_eq!(bus.read(0xFE9F), 0x9F);
+    }
+
+    #[test]
+    fn test_fea0_feff_range() {
+        let bus = MemoryBus::new(vec![0; 32768]);
+
+        // FEA0-FEFF returns high nibble of lower address byte
+        // For FEA0: (0xFEA0 & 0x0F00) >> 8 = 0x0A
+        assert_eq!(bus.read(0xFEA0), 0x0A);
+        assert_eq!(bus.read(0xFEB0), 0x0B);
+        assert_eq!(bus.read(0xFEC0), 0x0C);
+        assert_eq!(bus.read(0xFED0), 0x0D);
+        assert_eq!(bus.read(0xFEE0), 0x0E);
+        assert_eq!(bus.read(0xFEF0), 0x0F);
+        assert_eq!(bus.read(0xFFA0), 0x0A);
+        assert_eq!(bus.read(0xFFB0), 0x0B);
+    }
+
+    #[test]
+    fn test_memory_map_boundaries() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // ROM Bank 0
+        assert_eq!(bus.read(0x0000), 0x00);
+        assert_eq!(bus.read(0x3FFF), 0x00);
+
+        // ROM Bank 1 (same for now since no MBC)
+        assert_eq!(bus.read(0x4000), 0x00);
+        assert_eq!(bus.read(0x7FFF), 0x00);
+
+        // VRAM boundary
+        assert_eq!(bus.read(0x8000), 0x00);
+        assert_eq!(bus.read(0x9FFF), 0x00);
+
+        // External RAM
+        assert_eq!(bus.read(0xA000), 0x00);
+        assert_eq!(bus.read(0xBFFF), 0x00);
+
+        // WRAM
+        assert_eq!(bus.read(0xC000), 0x00);
+        assert_eq!(bus.read(0xCFFF), 0x00);
+        assert_eq!(bus.read(0xD000), 0x00);
+        assert_eq!(bus.read(0xDFFF), 0x00);
+
+        // Echo RAM
+        assert_eq!(bus.read(0xE000), 0x00);
+        assert_eq!(bus.read(0xFDFF), 0x00);
+
+        // OAM
+        assert_eq!(bus.read(0xFE00), 0x00);
+        assert_eq!(bus.read(0xFE9F), 0x00);
+
+        // I/O
+        assert_eq!(bus.read(0xFF00), 0xCF);
+        assert_eq!(bus.read(0xFF7F), 0x00);
+
+        // HRAM
+        assert_eq!(bus.read(0xFF80), 0x00);
+        assert_eq!(bus.read(0xFFFE), 0x00);
+
+        // IE
+        assert_eq!(bus.read(0xFFFF), 0x00);
+    }
+
+    #[test]
+    fn test_memory_overflow_ignores() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Writes to invalid addresses should be ignored
+        // Using wrapping_sub and wrapping_add to avoid compile-time overflow
+        bus.write(0u16.wrapping_sub(1), 0xFF); // Should not panic (wraps to 0xFFFF)
+        bus.write(0xFFFFu16.wrapping_add(1), 0xFF); // Should not panic (wraps to 0x0000)
+    }
+
+    #[test]
+    fn test_serial_io() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // SB (serial data)
+        bus.write(0xFF01, 0x48); // 'H'
+        assert_eq!(bus.read(0xFF01), 0x48);
+
+        // SC (serial control)
+        bus.write(0xFF02, 0x80); // Start transfer
+        assert_eq!(bus.read(0xFF02) & 0x7F, 0x00); // Bit 7 should be cleared
+    }
+
+    #[test]
+    fn test_divider_register() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // DIV register resets to 0 on write
+        bus.write(0xFF04, 0xFF);
+        assert_eq!(bus.read(0xFF04), 0x00);
+    }
+
+    #[test]
+    fn test_timer_registers() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // TIMA
+        bus.write(0xFF05, 0x42);
+        assert_eq!(bus.read(0xFF05), 0x42);
+
+        // TMA
+        bus.write(0xFF06, 0x24);
+        assert_eq!(bus.read(0xFF06), 0x24);
+
+        // TAC - only lower 3 bits writable
+        bus.write(0xFF07, 0xFF);
+        assert_eq!(bus.read(0xFF07), 0x07); // Only bits 0-2 preserved
+    }
+
+    #[test]
+    fn test_interrupt_flag_register() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // IF register - only bits 0-4 writable
+        bus.write(0xFF0F, 0xFF);
+        assert_eq!(bus.read(0xFF0F), 0x1F); // Only bits 0-4 preserved
+    }
+
+    #[test]
+    fn test_joypad_register() {
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // P1 register - only upper bits writable
+        bus.write(0xFF00, 0xF0);
+        assert_eq!(bus.read(0xFF00), 0xF0);
+
+        bus.write(0xFF00, 0x0F);
+        // Lower bits should be preserved from initial state
+        assert_eq!(bus.io[0x00] & 0x0F, 0x0F);
+    }
+
+    #[test]
+    fn test_get_rom() {
+        let rom_data = vec![0x11, 0x22, 0x33, 0x44];
+        let bus = MemoryBus::new(rom_data.clone());
+
+        assert_eq!(bus.get_rom(), rom_data.as_slice());
+    }
+
+    #[test]
+    fn test_cgb_mode_flag() {
+        let bus = MemoryBus::new(vec![0; 32768]);
+        assert!(!bus.cgb_mode);
+
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.cgb_mode = true;
+        assert!(bus.cgb_mode);
     }
 }

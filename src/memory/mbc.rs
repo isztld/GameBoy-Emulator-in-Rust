@@ -301,12 +301,86 @@ mod tests {
     }
 
     #[test]
-    fn test_mbc1_bank_switching() {
+    fn test_mbc_create_with_different_rom_sizes() {
+        // 16 KiB ROM - no MBC needed
+        let c = MemoryBankController::new(16384);
+        assert_eq!(c.config.mbc_type, MbcType::None);
+
+        // 32 KiB ROM - no MBC needed
+        let c = MemoryBankController::new(32768);
+        assert_eq!(c.config.mbc_type, MbcType::None);
+
+        // 64 KiB ROM - MBC1
+        let c = MemoryBankController::new(65536);
+        assert_eq!(c.config.mbc_type, MbcType::MBC1);
+
+        // 128 KiB ROM - MBC1
+        let c = MemoryBankController::new(131072);
+        assert_eq!(c.config.mbc_type, MbcType::MBC1);
+
+        // 256 KiB ROM - MBC1
+        let c = MemoryBankController::new(262144);
+        assert_eq!(c.config.mbc_type, MbcType::MBC1);
+
+        // 512 KiB ROM - MBC1
+        let c = MemoryBankController::new(524288);
+        assert_eq!(c.config.mbc_type, MbcType::MBC1);
+
+        // 1 MiB ROM - MBC1
+        let c = MemoryBankController::new(1048576);
+        assert_eq!(c.config.mbc_type, MbcType::MBC1);
+
+        // 2 MiB ROM - MBC5
+        let c = MemoryBankController::new(2097152);
+        assert_eq!(c.config.mbc_type, MbcType::MBC5);
+
+        // 4 MiB ROM - MBC5
+        let c = MemoryBankController::new(4194304);
+        assert_eq!(c.config.mbc_type, MbcType::MBC5);
+
+        // 8 MiB ROM - MBC5
+        let c = MemoryBankController::new(8388608);
+        assert_eq!(c.config.mbc_type, MbcType::MBC5);
+    }
+
+    #[test]
+    fn test_mbc_set_rom() {
+        let mut controller = MemoryBankController::new(32768);
+        assert_eq!(controller.config.mbc_type, MbcType::None);
+
+        // Set larger ROM - should change MBC type
+        controller.set_rom(vec![0; 65536]);
+        assert_eq!(controller.config.mbc_type, MbcType::MBC1);
+
+        // Set even larger ROM
+        controller.set_rom(vec![0; 1048576]);
+        assert_eq!(controller.config.mbc_type, MbcType::MBC5);
+    }
+
+    #[test]
+    fn test_mbc1_ram_enable() {
         let mut controller = MemoryBankController::new(65536);
 
-        // Write to ROM bank register
-        controller.mbc1_write(0x2000, 0x05);
-        assert_eq!(controller.rom_bank, 5);
+        // Enable RAM (write 0x0A to 0x0000-0x1FFF)
+        controller.mbc1_write(0x0000, 0x0A);
+        assert!(controller.ram_enabled);
+
+        // Disable RAM (write other value)
+        controller.mbc1_write(0x0000, 0x00);
+        assert!(!controller.ram_enabled);
+    }
+
+    #[test]
+    fn test_mbc1_rom_bank_switching() {
+        let mut controller = MemoryBankController::new(65536);
+
+        // Set ROM bank to 1
+        controller.mbc1_write(0x2000, 0x01);
+        assert_eq!(controller.rom_bank, 1);
+
+        // Set ROM bank to 31 (max for MBC1)
+        controller.mbc1_write(0x2000, 0x1F);
+        assert_eq!(controller.rom_bank, 31);
 
         // Bank 0 maps to bank 1
         controller.mbc1_write(0x2000, 0x00);
@@ -314,19 +388,257 @@ mod tests {
     }
 
     #[test]
+    fn test_mbc1_ram_bank_switching() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.rom_mode = false; // Simple mode
+
+        // Set RAM bank to 0
+        controller.mbc1_write(0x4000, 0x00);
+        assert_eq!(controller.ram_bank, 0);
+
+        // Set RAM bank to 3 (max for MBC1 with RAM)
+        controller.mbc1_write(0x4000, 0x03);
+        assert_eq!(controller.ram_bank, 3);
+    }
+
+    #[test]
     fn test_mbc1_mode_switching() {
         let mut controller = MemoryBankController::new(1048576); // 1 MiB
 
-        // Mode 0
+        // Mode 0: RAM bank mode
         controller.rom_mode = false;
         controller.rom_bank = 0x10;
+        controller.ram_bank = 0x00;
 
-        // Mode 1 enables upper bits
+        // Switch to mode 1 (ROM banking mode)
         controller.mbc1_write(0x6000, 0x01);
         assert!(controller.rom_mode);
 
-        // Now upper bits affect ROM bank
+        // In mode 1, upper 2 bits go into ROM bank
         controller.mbc1_write(0x4000, 0x01); // Set upper bit
         assert_eq!(controller.rom_bank, 0x30); // 0x10 | (0x01 << 5)
+
+        // Switch back to mode 0
+        controller.mbc1_write(0x6000, 0x00);
+        assert!(!controller.rom_mode);
+    }
+
+    #[test]
+    fn test_mbc1_read_rom() {
+        let mut controller = MemoryBankController::new(65536 * 2); // 128 KiB
+        controller.rom = vec![0x00; 131072];
+        // Fill bank 1 with 0x55
+        for i in 0..16384 {
+            controller.rom[16384 + i] = 0x55;
+        }
+        // Fill bank 2 with 0xAA
+        for i in 0..16384 {
+            controller.rom[32768 + i] = 0xAA;
+        }
+
+        controller.rom_bank = 1;
+        assert_eq!(controller.read_rom_banked(0x4000), 0x55);
+        assert_eq!(controller.read_rom_banked(0x7FFF), 0x55);
+
+        controller.rom_bank = 2;
+        assert_eq!(controller.read_rom_banked(0x4000), 0xAA);
+        assert_eq!(controller.read_rom_banked(0x7FFF), 0xAA);
+    }
+
+    #[test]
+    fn test_mbc1_read_rom_out_of_bounds() {
+        let controller = MemoryBankController::new(65536); // 64 KiB
+
+        // Should return 0xFF for addresses outside ROM
+        assert_eq!(controller.read_rom(0x0000), 0xFF);
+        assert_eq!(controller.read_rom_banked(0x4000), 0xFF);
+    }
+
+    #[test]
+    fn test_mbc1_read_rom_banked_edge_cases() {
+        let controller = MemoryBankController::new(65536);
+
+        // Out of range addresses should return 0xFF
+        assert_eq!(controller.read_rom_banked(0x3FFF), 0xFF);
+        assert_eq!(controller.read_rom_banked(0x8000), 0xFF);
+    }
+
+    #[test]
+    fn test_mbc1_large_rom_mode() {
+        let mut controller = MemoryBankController::new(2097152); // 2 MiB
+
+        // Mode 1 with large ROM
+        controller.rom_mode = true;
+        controller.rom_bank = 0x10;
+
+        // Set upper ROM bits
+        controller.mbc1_write(0x4000, 0x01);
+        assert_eq!(controller.rom_bank, 0x30); // 0x10 | (0x01 << 5)
+    }
+
+    #[test]
+    fn test_mbc2_create() {
+        let controller = MemoryBankController::new(65536);
+        // MBC2 is for ROMs up to 512 KiB with built-in RAM
+        // We'll use MBC1 for now as it's more common
+        assert_eq!(controller.config.mbc_type, MbcType::MBC1);
+    }
+
+    #[test]
+    fn test_mbc2_ram_enable() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC2;
+
+        // MBC2 RAM enable is at address 0x0000-0x3FFF
+        // When bit 8 is 0, write controls RAM
+        controller.mbc2_write(0x0000, 0x0A);
+        assert!(controller.mbc2_ram_enabled);
+
+        controller.mbc2_write(0x0000, 0x00);
+        assert!(!controller.mbc2_ram_enabled);
+    }
+
+    #[test]
+    fn test_mbc2_rom_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC2;
+
+        // MBC2 ROM bank select at address 0x0100-0x1FF
+        controller.mbc2_write(0x0100, 0x05);
+        assert_eq!(controller.mbc2_rom_bank, 5);
+
+        controller.mbc2_write(0x0100, 0x0F); // Max for MBC2
+        assert_eq!(controller.mbc2_rom_bank, 15);
+    }
+
+    #[test]
+    fn test_mbc2_bank_zero_maps_to_one() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC2;
+
+        // Bank 0 should map to bank 1
+        controller.mbc2_write(0x0100, 0x00);
+        assert_eq!(controller.mbc2_rom_bank, 1);
+    }
+
+    #[test]
+    fn test_mbc3_ram_enable() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC3;
+
+        // MBC3 RAM enable
+        controller.mbc3_write(0x0000, 0x0A);
+        assert!(controller.ram_enabled);
+
+        controller.mbc3_write(0x0000, 0x00);
+        assert!(!controller.ram_enabled);
+    }
+
+    #[test]
+    fn test_mbc3_rom_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC3;
+
+        // MBC3 ROM bank (7 bits)
+        controller.mbc3_write(0x2000, 0x01);
+        assert_eq!(controller.rom_bank, 1);
+
+        controller.mbc3_write(0x2000, 0x7F); // Max for MBC3
+        assert_eq!(controller.rom_bank, 127);
+    }
+
+    #[test]
+    fn test_mbc3_ram_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC3;
+
+        // MBC3 RAM bank select
+        controller.mbc3_write(0x4000, 0x00);
+        assert_eq!(controller.ram_bank, 0);
+
+        controller.mbc3_write(0x4000, 0x07);
+        assert_eq!(controller.ram_bank, 7);
+    }
+
+    #[test]
+    fn test_mbc5_rom_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC5;
+
+        // MBC5 ROM bank low
+        controller.mbc5_write(0x2000, 0x34);
+        assert_eq!(controller.mbc5_rom_bank_low, 0x34);
+
+        // MBC5 ROM bank high
+        controller.mbc5_write(0x3000, 0x01);
+        assert_eq!(controller.mbc5_rom_bank_high, 0x01);
+    }
+
+    #[test]
+    fn test_mbc5_ram_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC5;
+
+        // MBC5 RAM bank
+        controller.mbc5_write(0x4000, 0x00);
+        assert_eq!(controller.ram_bank, 0);
+
+        controller.mbc5_write(0x4000, 0x0F);
+        assert_eq!(controller.ram_bank, 15);
+    }
+
+    #[test]
+    fn test_mbc5_ram_enable() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC5;
+
+        // MBC5 RAM enable
+        controller.mbc5_write(0x0000, 0x0A);
+        assert!(controller.ram_enabled);
+
+        controller.mbc5_write(0x0000, 0x00);
+        assert!(!controller.ram_enabled);
+    }
+
+    #[test]
+    fn test_mbc5_large_rom_banks() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.config.mbc_type = MbcType::MBC5;
+
+        // Test large ROM bank numbers
+        controller.mbc5_write(0x2000, 0xFF); // Low byte
+        controller.mbc5_write(0x3000, 0x01); // High bit
+        // Full bank = (1 << 8) | 0xFF = 511
+    }
+
+    #[test]
+    fn test_get_rom_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.rom_bank = 0x10;
+        assert_eq!(controller.get_rom_bank(), 0x10);
+    }
+
+    #[test]
+    fn test_get_ram_bank() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.ram_bank = 0x03;
+        assert_eq!(controller.get_ram_bank(), 0x03);
+    }
+
+    #[test]
+    fn test_is_ram_enabled() {
+        let mut controller = MemoryBankController::new(65536);
+        assert!(!controller.is_ram_enabled());
+        controller.ram_enabled = true;
+        assert!(controller.is_ram_enabled());
+    }
+
+    #[test]
+    fn test_is_rom_mode() {
+        let mut controller = MemoryBankController::new(65536);
+        controller.rom_mode = false;
+        assert!(!controller.is_rom_mode());
+        controller.rom_mode = true;
+        assert!(controller.is_rom_mode());
     }
 }

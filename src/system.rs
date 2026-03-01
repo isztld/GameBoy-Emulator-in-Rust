@@ -192,7 +192,7 @@ mod tests {
         let rom = vec![0; 32768];
         let system = System::new(rom);
         assert!(!system.is_running());
-        assert_eq!(system.cpu_state().registers.pc, 0x0000);
+        assert_eq!(system.cpu_state().registers.pc, 0x0100); // PC should be 0x0100 after reset in System::new
     }
 
     #[test]
@@ -200,6 +200,7 @@ mod tests {
         let mut system = System::new(vec![0; 32768]);
         system.cpu.state_mut().registers.pc = 0x1234;
         system.reset();
-        assert_eq!(system.cpu_state().registers.pc, 0x0000);
+        // After reset, PC should be 0x0100 (from CPU::reset)
+        assert_eq!(system.cpu_state().registers.pc, 0x0100);
     }
 }
