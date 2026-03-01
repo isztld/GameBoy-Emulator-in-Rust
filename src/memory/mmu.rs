@@ -48,7 +48,10 @@ impl MemoryBus {
     pub fn write_serial_char(c: char) {
         let log_file = SERIAL_LOG_FILE.lock().unwrap();
         if let Some(ref file) = *log_file {
-            file.lock().unwrap().write_all(c.to_string().as_bytes()).ok();
+            let mut f = file.lock().unwrap();
+            f.write_all(c.to_string().as_bytes()).ok();
+            f.write_all(b"\n").ok();
+            f.flush().ok();
         }
     }
 
@@ -187,6 +190,7 @@ impl MemoryBus {
                 // If transfer was requested (bit 7 was set), output the data
                 if value & 0x80 != 0 {
                     let data = self.io[0x01];
+                    eprintln!("DEBUG: Serial output character: {:?} (0x{:02X})", data as char, data);
                     // Output character to serial log file if enabled
                     MemoryBus::write_serial_char(data as char);
                 }
