@@ -150,11 +150,11 @@ pub enum R16Register {
 
 impl R16Register {
     pub fn from_byte(byte: u8) -> Self {
-        match (byte >> 4) & 0x03 {
+        match byte & 0x30 {
             0x00 => R16Register::BC,
-            0x01 => R16Register::DE,
-            0x02 => R16Register::HL,
-            0x03 => R16Register::SP,
+            0x10 => R16Register::DE,
+            0x20 => R16Register::HL,
+            0x30 => R16Register::SP,
             _ => unreachable!(),
         }
     }
@@ -300,8 +300,8 @@ mod tests {
     #[test]
     fn test_r16_register() {
         assert_eq!(R16Register::from_byte(0x01), R16Register::BC);
-        assert_eq!(R16Register::from_byte(0x31), R16Register::DE);
-        assert_eq!(R16Register::from_byte(0x61), R16Register::HL);
-        assert_eq!(R16Register::from_byte(0x71), R16Register::SP);
+        assert_eq!(R16Register::from_byte(0x11), R16Register::DE);
+        assert_eq!(R16Register::from_byte(0x21), R16Register::HL);
+        assert_eq!(R16Register::from_byte(0x31), R16Register::SP);
     }
 }

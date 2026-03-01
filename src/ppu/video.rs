@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_lcdc_flags() {
-        let lcdc = Lcdc::new(0x91);
+        let lcdc = Lcdc::new(0xF5);
         assert!(lcdc.is_enabled());
         assert!(lcdc.window_tile_map_select());
         assert!(lcdc.window_display());

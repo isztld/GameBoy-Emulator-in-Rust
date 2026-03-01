@@ -35,6 +35,7 @@ pub struct MemoryBus {
 impl MemoryBus {
     pub fn new(rom_data: Vec<u8>) -> Self {
         let mbc = MemoryBankController::new(rom_data.len());
+        // Note: MBC will have an empty ROM, the actual ROM data is stored in MemoryBus
 
         // Initialize I/O registers to power-on state
         let mut io = [0u8; 128];
@@ -89,8 +90,8 @@ impl MemoryBus {
     /// Read a byte from memory
     pub fn read(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => self.mbc.read_rom(address),
-            0x4000..=0x7FFF => self.mbc.read_rom_banked(address),
+            0x0000..=0x3FFF => self.rom[address as usize],
+            0x4000..=0x7FFF => self.rom[address as usize],
             0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize],
             0xA000..=0xBFFF => self.external_ram[(address - 0xA000) as usize],
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize],

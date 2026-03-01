@@ -233,6 +233,7 @@ mod tests {
         let mut ic = InterruptController::new();
         ic.ie = 0x05; // Enable VBlank and Timer
         ic.if_flags.set(0x05); // Set both flags
+        ic.ime = true; // Enable interrupts
 
         assert!(ic.has_pending());
 

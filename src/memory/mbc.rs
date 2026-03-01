@@ -56,7 +56,7 @@ impl MemoryBankController {
         // For now, use MBC1 for ROMs > 32 KiB
         let mbc_type = if rom_size <= 32768 {
             MbcType::None
-        } else if rom_size <= 1048576 {
+        } else if rom_size < 1048576 {
             MbcType::MBC1
         } else {
             MbcType::MBC5
@@ -89,7 +89,7 @@ impl MemoryBankController {
         // Reconfigure MBC type based on actual ROM size
         self.config.mbc_type = if size <= 32768 {
             MbcType::None
-        } else if size <= 1048576 {
+        } else if size < 1048576 {
             MbcType::MBC1
         } else {
             MbcType::MBC5
@@ -98,10 +98,6 @@ impl MemoryBankController {
 
     /// Read from ROM (unbanked region, 0x0000-0x3FFF)
     pub fn read_rom(&self, address: u16) -> u8 {
-        if address >= 0x4000 {
-            return 0xFF; // Out of range
-        }
-
         let index = address as usize;
         if index < self.rom.len() {
             self.rom[index]
