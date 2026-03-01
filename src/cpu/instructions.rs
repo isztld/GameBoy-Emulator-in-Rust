@@ -149,6 +149,7 @@ pub enum R16Register {
     DE,
     HL,
     SP,
+    AF,
 }
 
 impl R16Register {
@@ -168,6 +169,7 @@ impl R16Register {
             R16Register::DE => 0x10,
             R16Register::HL => 0x20,
             R16Register::SP => 0x30,
+            R16Register::AF => 0x30, // Same encoding as SP in some contexts
         }
     }
 }

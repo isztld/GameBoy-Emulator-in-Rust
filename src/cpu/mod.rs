@@ -1,6 +1,8 @@
 pub mod registers;
 pub mod instructions;
 pub mod cpu;
+pub mod decode;
+pub mod exec;
 
 pub use registers::{Registers, Flags, CPUState};
 pub use cpu::CPU;

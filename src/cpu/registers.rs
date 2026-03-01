@@ -171,6 +171,30 @@ impl Registers {
     pub fn set_l(&mut self, value: u8) {
         self.hl = (self.hl & 0xFF00) | (value as u16);
     }
+
+    pub fn f_mut(&mut self) -> &mut Flags {
+        unsafe { &mut *(self as *mut Registers as *mut Flags) }
+    }
+
+    pub fn r16(&self, reg: crate::cpu::instructions::R16Register) -> u16 {
+        match reg {
+            crate::cpu::instructions::R16Register::BC => self.bc,
+            crate::cpu::instructions::R16Register::DE => self.de,
+            crate::cpu::instructions::R16Register::HL => self.hl,
+            crate::cpu::instructions::R16Register::SP => self.sp,
+            crate::cpu::instructions::R16Register::AF => self.af,
+        }
+    }
+
+    pub fn set_r16(&mut self, reg: crate::cpu::instructions::R16Register, value: u16) {
+        match reg {
+            crate::cpu::instructions::R16Register::BC => self.bc = value,
+            crate::cpu::instructions::R16Register::DE => self.de = value,
+            crate::cpu::instructions::R16Register::HL => self.hl = value,
+            crate::cpu::instructions::R16Register::SP => self.sp = value,
+            crate::cpu::instructions::R16Register::AF => self.af = value,
+        }
+    }
 }
 
 impl Default for Registers {
