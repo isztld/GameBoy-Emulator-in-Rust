@@ -28,12 +28,14 @@ pub struct System {
     pub joypad: Joypad,
     pub running: bool,
     pub frame_complete: bool,
+    pub total_cycles: u64,
+    pub max_instructions: u64,
 }
 
 impl System {
     /// Create a new GameBoy system with the given ROM
     pub fn new(rom_data: Vec<u8>) -> Self {
-        System {
+        let mut system = System {
             cpu: CPU::new(),
             mmu: MemoryBus::new(rom_data),
             ppu: VideoController::new(),
@@ -43,7 +45,11 @@ impl System {
             joypad: Joypad::new(),
             running: false,
             frame_complete: false,
-        }
+            total_cycles: 0,
+            max_instructions: 100000, // Run for max 100000 instructions (enough for CPU test)
+        };
+        system.reset(); // Initialize CPU registers
+        system
     }
 
     /// Reset the system to power-on state
@@ -56,8 +62,28 @@ impl System {
 
     /// Run the system for one CPU instruction
     pub fn step(&mut self) {
+        // Check if we've exceeded max instructions
+        if self.total_cycles >= self.max_instructions {
+            self.running = false;
+            return;
+        }
+
         // Execute CPU instruction
         let cycles = self.cpu.execute(&mut self.mmu);
+
+        // Log instruction
+        let pc = self.cpu.state().registers.pc;
+        let a = self.cpu.state().registers.a();
+        let f = self.cpu.state().registers.f();
+        let b = self.cpu.state().registers.b();
+        let c = self.cpu.state().registers.c();
+        let d = self.cpu.state().registers.d();
+        let e = self.cpu.state().registers.e();
+        let h = self.cpu.state().registers.h();
+        let l = self.cpu.state().registers.l();
+        let sp = self.cpu.state().registers.sp;
+        println!("PC=${:04X} A:${:02X} F:{:02X} BC:${:04X} DE:${:04X} HL:${:04X} SP:${:04X} CYCLES:{}",
+            pc, a, f.get(), (b as u16) << 8 | c as u16, (d as u16) << 8 | e as u16, (h as u16) << 8 | l as u16, sp, cycles);
 
         // Update timer (DIV increments every 4 cycles at 16384 Hz)
         for _ in 0..cycles {
@@ -78,6 +104,9 @@ impl System {
         for _ in 0..cycles {
             self.timer.clock();
         }
+
+        // Update cycle count
+        self.total_cycles += cycles as u64;
 
         // Check for pending interrupts
         self.check_interrupts();

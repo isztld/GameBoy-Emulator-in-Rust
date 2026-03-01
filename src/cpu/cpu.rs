@@ -28,12 +28,12 @@ impl CPU {
 
     /// Reset the CPU to power-on state
     pub fn reset(&mut self) {
-        self.state.registers.pc = 0x0000;
+        self.state.registers.pc = 0x0100;
         self.state.registers.sp = 0xFFFE;
-        self.state.registers.af = 0x0000;
-        self.state.registers.bc = 0x0000;
-        self.state.registers.de = 0x0000;
-        self.state.registers.hl = 0x0000;
+        self.state.registers.af = 0x01B0;
+        self.state.registers.bc = 0x0013;
+        self.state.registers.de = 0x00D8;
+        self.state.registers.hl = 0x014D;
         self.state.ime = false;
         self.halted = false;
         self.stop_halt = false;
