@@ -17,6 +17,7 @@
 
 use crate::memory::mbc::MemoryBankController;
 use std::io::Write;
+use std::sync::{Arc, Mutex};
 
 /// Memory bus for the GameBoy
 #[derive(Debug)]
@@ -33,7 +34,24 @@ pub struct MemoryBus {
     pub cgb_mode: bool, // CGB mode enabled
 }
 
+// Global serial log file for output (using Arc<Mutex<File>> for sharing)
+static SERIAL_LOG_FILE: Mutex<Option<Arc<Mutex<std::fs::File>>>> = Mutex::new(None);
+
 impl MemoryBus {
+    /// Set the serial log file for console output
+    pub fn set_serial_log_file(file: Option<Arc<Mutex<std::fs::File>>>) {
+        let mut log_file = SERIAL_LOG_FILE.lock().unwrap();
+        *log_file = file;
+    }
+
+    /// Write a character to the serial log or stdout if not configured
+    pub fn write_serial_char(c: char) {
+        let log_file = SERIAL_LOG_FILE.lock().unwrap();
+        if let Some(ref file) = *log_file {
+            file.lock().unwrap().write_all(c.to_string().as_bytes()).ok();
+        }
+    }
+
     pub fn new(rom_data: Vec<u8>) -> Self {
         let mbc = MemoryBankController::new(rom_data.len());
         // Note: MBC will have an empty ROM, the actual ROM data is stored in MemoryBus
@@ -169,9 +187,8 @@ impl MemoryBus {
                 // If transfer was requested (bit 7 was set), output the data
                 if value & 0x80 != 0 {
                     let data = self.io[0x01];
-                    // Output character to stdout
-                    print!("{}", data as char);
-                    std::io::stdout().flush().ok();
+                    // Output character to serial log file if enabled
+                    MemoryBus::write_serial_char(data as char);
                 }
             }
             0x04 => {

@@ -9,6 +9,10 @@
 //! - Interrupts
 //! - Input
 
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
 pub use crate::cpu::{CPU, CPUState};
 pub use crate::memory::MemoryBus;
 pub use crate::ppu::video::VideoController;
@@ -16,6 +20,7 @@ pub use crate::audio::apu::AudioProcessor;
 pub use crate::timer::Timer;
 pub use crate::interrupt::InterruptController;
 pub use crate::input::joypad::Joypad;
+pub use crate::config::EmulatorFlags;
 
 /// GameBoy System
 pub struct System {
@@ -30,11 +35,40 @@ pub struct System {
     pub frame_complete: bool,
     pub total_cycles: u64,
     pub max_instructions: u64,
+    pub cpu_log_file: Option<Arc<Mutex<std::fs::File>>>,
+    pub serial_log_file: Option<Arc<Mutex<std::fs::File>>>,
 }
 
 impl System {
     /// Create a new GameBoy system with the given ROM
-    pub fn new(rom_data: Vec<u8>) -> Self {
+    pub fn new(rom_data: Vec<u8>, flags: EmulatorFlags) -> Self {
+        let cpu_log_file = if flags.log_cpu {
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&flags.log_cpu_file)
+                .expect("Failed to create CPU log file");
+            Some(Arc::new(Mutex::new(file)))
+        } else {
+            None
+        };
+
+        let serial_log_file = if flags.log_serial {
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&flags.log_serial_file)
+                .expect("Failed to create serial log file");
+            Some(Arc::new(Mutex::new(file)))
+        } else {
+            None
+        };
+
+        // Set the serial log file in the MMU (using Arc<Mutex<File>> for sharing)
+        MemoryBus::set_serial_log_file(serial_log_file.clone());
+
         let mut system = System {
             cpu: CPU::new(),
             mmu: MemoryBus::new(rom_data),
@@ -47,6 +81,8 @@ impl System {
             frame_complete: false,
             total_cycles: 0,
             max_instructions: 100000, // Run for max 100000 instructions (enough for CPU test)
+            cpu_log_file,
+            serial_log_file,
         };
         system.reset(); // Initialize CPU registers
         system
@@ -71,19 +107,26 @@ impl System {
         // Execute CPU instruction
         let cycles = self.cpu.execute(&mut self.mmu);
 
-        // Log instruction
-        let pc = self.cpu.state().registers.pc;
-        let a = self.cpu.state().registers.a();
-        let f = self.cpu.state().registers.f();
-        let b = self.cpu.state().registers.b();
-        let c = self.cpu.state().registers.c();
-        let d = self.cpu.state().registers.d();
-        let e = self.cpu.state().registers.e();
-        let h = self.cpu.state().registers.h();
-        let l = self.cpu.state().registers.l();
-        let sp = self.cpu.state().registers.sp;
-        println!("PC=${:04X} A:${:02X} F:{:02X} BC:${:04X} DE:${:04X} HL:${:04X} SP:${:04X} CYCLES:{}",
-            pc, a, f.get(), (b as u16) << 8 | c as u16, (d as u16) << 8 | e as u16, (h as u16) << 8 | l as u16, sp, cycles);
+        // Log instruction if enabled
+        if self.cpu_log_file.is_some() {
+            let pc = self.cpu.state().registers.pc;
+            let a = self.cpu.state().registers.a();
+            let f = self.cpu.state().registers.f();
+            let b = self.cpu.state().registers.b();
+            let c = self.cpu.state().registers.c();
+            let d = self.cpu.state().registers.d();
+            let e = self.cpu.state().registers.e();
+            let h = self.cpu.state().registers.h();
+            let l = self.cpu.state().registers.l();
+            let sp = self.cpu.state().registers.sp;
+            let log_line = format!(
+                "PC=${:04X} A:${:02X} F:{:02X} BC:${:04X} DE:${:04X} HL:${:04X} SP:${:04X} CYCLES:{}\n",
+                pc, a, f.get(), (b as u16) << 8 | c as u16, (d as u16) << 8 | e as u16, (h as u16) << 8 | l as u16, sp, cycles
+            );
+            if let Some(ref file) = self.cpu_log_file {
+                file.lock().unwrap().write_all(log_line.as_bytes()).ok();
+            }
+        }
 
         // Update timer (DIV increments every 4 cycles at 16384 Hz)
         for _ in 0..cycles {
@@ -179,7 +222,7 @@ impl System {
 
 impl Default for System {
     fn default() -> Self {
-        System::new(vec![0; 32768]) // Default 32 KiB ROM
+        System::new(vec![0; 32768], EmulatorFlags::default()) // Default 32 KiB ROM
     }
 }
 
@@ -190,14 +233,15 @@ mod tests {
     #[test]
     fn test_system_create() {
         let rom = vec![0; 32768];
-        let system = System::new(rom);
+        let flags = EmulatorFlags::default();
+        let system = System::new(rom, flags);
         assert!(!system.is_running());
         assert_eq!(system.cpu_state().registers.pc, 0x0100); // PC should be 0x0100 after reset in System::new
     }
 
     #[test]
     fn test_system_reset() {
-        let mut system = System::new(vec![0; 32768]);
+        let mut system = System::new(vec![0; 32768], EmulatorFlags::default());
         system.cpu.state_mut().registers.pc = 0x1234;
         system.reset();
         // After reset, PC should be 0x0100 (from CPU::reset)
