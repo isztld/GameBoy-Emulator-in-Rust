@@ -112,7 +112,18 @@ impl MemoryBus {
     /// Write a byte to memory
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
-            0x0000..=0x3FFF => self.mbc.write_rom_control(address, value),
+            0x0000..=0x3FFF => {
+                // For No MBC, write directly to ROM (allows testing)
+                // For MBC, write to MBC for control
+                if self.mbc.is_none() {
+                    let index = address as usize;
+                    if index < self.rom.len() {
+                        self.rom[index] = value;
+                    }
+                } else {
+                    self.mbc.write_rom_control(address, value);
+                }
+            }
             0x4000..=0x7FFF => self.mbc.write_rom_banked(address, value),
             0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => self.external_ram[(address - 0xA000) as usize] = value,

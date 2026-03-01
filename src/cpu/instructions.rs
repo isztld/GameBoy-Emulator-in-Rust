@@ -24,7 +24,7 @@ pub enum InstructionFormat {
 }
 
 /// CPU Instruction
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Instruction {
     // Block 0 instructions
     NOP,
@@ -532,6 +532,119 @@ mod tests {
                 assert_eq!(reg, R8Register::B);
             }
             _ => panic!("Expected SETBR8"),
+        }
+    }
+
+    // ==================== CB INSTRUCTION TESTS ====================
+
+    #[test]
+    fn test_cb_all_rotate_shift_instructions() {
+        // Test all rotate/shift instructions with each register
+        for reg_byte in 0x00..=0x07 {
+            let reg = R8Register::from_byte(reg_byte);
+
+            // RLC
+            match CBInstruction::from_byte(0xCB, reg_byte) {
+                CBInstruction::RLCR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected RLC for reg_byte={:02X}", reg_byte),
+            }
+
+            // RRC
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x08) {
+                CBInstruction::RRCR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected RRC for reg_byte={:02X}", reg_byte),
+            }
+
+            // RL
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x10) {
+                CBInstruction::RLR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected RL for reg_byte={:02X}", reg_byte),
+            }
+
+            // RR
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x18) {
+                CBInstruction::RRR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected RR for reg_byte={:02X}", reg_byte),
+            }
+
+            // SLA
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x20) {
+                CBInstruction::SLAR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected SLA for reg_byte={:02X}", reg_byte),
+            }
+
+            // SRA
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x28) {
+                CBInstruction::SRAR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected SRA for reg_byte={:02X}", reg_byte),
+            }
+
+            // SWAP
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x30) {
+                CBInstruction::SWAPR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected SWAP for reg_byte={:02X}", reg_byte),
+            }
+
+            // SRL
+            match CBInstruction::from_byte(0xCB, reg_byte | 0x38) {
+                CBInstruction::SRLR8 { reg: r } => assert_eq!(r, reg),
+                _ => panic!("Expected SRL for reg_byte={:02X}", reg_byte),
+            }
+        }
+    }
+
+    #[test]
+    fn test_cb_all_bit_instructions() {
+        // Test BIT instructions with all bits (0-7) and all registers
+        // BIT opcodes are 0x40-0x7F
+        for bit in 0..8 {
+            for reg_byte in 0x00..=0x07 {
+                let reg = R8Register::from_byte(reg_byte);
+
+                match CBInstruction::from_byte(0xCB, 0x40 | (bit << 3) | reg_byte) {
+                    CBInstruction::BITBR8 { bit: b, reg: r } => {
+                        assert_eq!(b, bit);
+                        assert_eq!(r, reg);
+                    }
+                    _ => panic!("Expected BIT for bit={}, reg_byte={:02X}", bit, reg_byte),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_cb_all_res_instructions() {
+        // Test RES instructions with all bits (0-7) and all registers
+        for bit in 0..8 {
+            for reg_byte in 0x00..=0x07 {
+                let reg = R8Register::from_byte(reg_byte);
+
+                match CBInstruction::from_byte(0xCB, 0x80 | (bit << 3) | reg_byte) {
+                    CBInstruction::RESBR8 { bit: b, reg: r } => {
+                        assert_eq!(b, bit);
+                        assert_eq!(r, reg);
+                    }
+                    _ => panic!("Expected RES for bit={}, reg_byte={:02X}", bit, reg_byte),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_cb_all_set_instructions() {
+        // Test SET instructions with all bits (0-7) and all registers
+        for bit in 0..8 {
+            for reg_byte in 0x00..=0x07 {
+                let reg = R8Register::from_byte(reg_byte);
+
+                match CBInstruction::from_byte(0xCB, 0xC0 | (bit << 3) | reg_byte) {
+                    CBInstruction::SETBR8 { bit: b, reg: r } => {
+                        assert_eq!(b, bit);
+                        assert_eq!(r, reg);
+                    }
+                    _ => panic!("Expected SET for bit={}, reg_byte={:02X}", bit, reg_byte),
+                }
+            }
         }
     }
 }

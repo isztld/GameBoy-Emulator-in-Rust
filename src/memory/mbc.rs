@@ -125,7 +125,12 @@ impl MemoryBankController {
 
     /// Write to ROM control region (0x0000-0x7FFF)
     pub fn write_rom_control(&mut self, address: u16, value: u8) {
+        // For No MBC, write directly to ROM (allows testing)
         if self.config.mbc_type == MbcType::None {
+            let index = address as usize;
+            if index < self.rom.len() {
+                self.rom[index] = value;
+            }
             return;
         }
 
@@ -281,6 +286,11 @@ impl MemoryBankController {
     /// Check if ROM mode is enabled (MBC1)
     pub fn is_rom_mode(&self) -> bool {
         self.rom_mode
+    }
+
+    /// Check if MBC type is None
+    pub fn is_none(&self) -> bool {
+        self.config.mbc_type == MbcType::None
     }
 }
 
