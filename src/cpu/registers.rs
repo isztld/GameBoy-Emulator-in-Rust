@@ -400,7 +400,7 @@ mod tests {
         regs.pc = 0x0100;
 
         assert_eq!(regs.a(), 0x12);
-        assert_eq!(regs.f().get(), 0x34);
+        assert_eq!(regs.f().get(), 0x30); // F register only uses upper 4 bits (hardware behavior)
         assert_eq!(regs.b(), 0x56);
         assert_eq!(regs.c(), 0x78);
         assert_eq!(regs.d(), 0x9A);

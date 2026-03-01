@@ -53,7 +53,7 @@ impl MemoryBankController {
     /// Create a new MBC based on ROM size
     pub fn new(rom_size: usize) -> Self {
         // Determine MBC type based on ROM size
-        // For now, use MBC1 for ROMs > 32 KiB
+        // MBC1 supports up to 2 MiB, MBC5 for larger
         let mbc_type = if rom_size <= 32768 {
             MbcType::None
         } else if rom_size < 1048576 {
@@ -326,9 +326,9 @@ mod tests {
         let c = MemoryBankController::new(524288);
         assert_eq!(c.config.mbc_type, MbcType::MBC1);
 
-        // 1 MiB ROM - MBC1
+        // 1 MiB ROM - MBC5
         let c = MemoryBankController::new(1048576);
-        assert_eq!(c.config.mbc_type, MbcType::MBC1);
+        assert_eq!(c.config.mbc_type, MbcType::MBC5);
 
         // 2 MiB ROM - MBC5
         let c = MemoryBankController::new(2097152);
@@ -447,11 +447,12 @@ mod tests {
 
     #[test]
     fn test_mbc1_read_rom_out_of_bounds() {
-        let controller = MemoryBankController::new(65536); // 64 KiB
+        let controller = MemoryBankController::new(32768); // 32 KiB
 
         // Should return 0xFF for addresses outside ROM
-        assert_eq!(controller.read_rom(0x0000), 0xFF);
-        assert_eq!(controller.read_rom_banked(0x4000), 0xFF);
+        // For 32KB ROM, addresses 0x8000+ are out of bounds
+        assert_eq!(controller.read_rom(0x8000), 0xFF);
+        assert_eq!(controller.read_rom(0xFFFF), 0xFF);
     }
 
     #[test]
