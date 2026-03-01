@@ -34,7 +34,7 @@ impl CPU {
     pub fn reset(&mut self) {
         self.state.registers.pc = 0x0100;
         self.state.registers.sp = 0xFFFE;
-        self.state.registers.af = 0x0000;
+        self.state.registers.af = 0x01B0;
         self.state.registers.bc = 0x0013;
         self.state.registers.de = 0x00D8;
         self.state.registers.hl = 0x014D;
@@ -95,9 +95,7 @@ impl CPU {
             | Instruction::RET
             | Instruction::RetCond { .. }
             | Instruction::RETI
-            | Instruction::RST { .. }
-            | Instruction::LdHlSpImm8 { .. }
-            | Instruction::LdSpHl => {
+            | Instruction::RST { .. } => {
                 // PC already set by execute_instruction, nothing to do
             }
             _ => {
@@ -601,6 +599,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x30);
         cpu.state.registers.set_b(0x10);
+        cpu.state.registers.f_mut().set(0); // clear all flags
 
         let instruction = crate::cpu::instructions::Instruction::SbcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
@@ -815,6 +814,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x30);
+        cpu.state.registers.f_mut().set(0); // clear all flags
 
         let instruction = crate::cpu::instructions::Instruction::SbcAImm8 { value: 0x10 };
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
@@ -1103,12 +1103,47 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x19); // 19 in BCD
+        cpu.state.registers.f_mut().set(0);
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
 
         // 0x19 has both nibbles <= 9, so no adjustment needed
         assert_eq!(cpu.state.registers.a(), 0x19);
+    }
+
+    #[test]
+    fn daa_half_carry_adjust() {
+        let mut cpu = CPU::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        cpu.state.registers.set_a(0x0A);
+        let f = cpu.state.registers.f_mut();
+        f.set_half_carry(true);
+        f.set_subtraction(false);
+        f.set_carry(false);
+
+        let instruction = crate::cpu::instructions::Instruction::DAA;
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+
+        assert_eq!(cpu.state.registers.a(), 0x10);
+    }
+
+    #[test]
+    fn daa_full_carry_adjust() {
+        let mut cpu = CPU::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        cpu.state.registers.set_a(0x9A);
+        let f = cpu.state.registers.f_mut();
+        f.set_subtraction(false);
+        f.set_half_carry(false);
+        f.set_carry(false);
+
+        let instruction = crate::cpu::instructions::Instruction::DAA;
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+
+        assert_eq!(cpu.state.registers.a(), 0x00);
+        assert!(cpu.state.registers.f().is_carry());
+        assert!(cpu.state.registers.f().is_zero());
     }
 
     #[test]
@@ -2084,7 +2119,7 @@ mod tests {
 
         assert_eq!(cpu.state.registers.pc, 0x0100);
         assert_eq!(cpu.state.registers.sp, 0xFFFE);
-        assert_eq!(cpu.state.registers.af, 0x0000);
+        assert_eq!(cpu.state.registers.af, 0x01B0);
         assert_eq!(cpu.state.registers.bc, 0x0013);
         assert_eq!(cpu.state.registers.de, 0x00D8);
         assert_eq!(cpu.state.registers.hl, 0x014D);

@@ -26,7 +26,7 @@ pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.set_a(result);
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (val & 0x0F) + old_c as u8 > 0x0F);
+    cpu_state.registers.f_mut().set_half_carry(((a & 0xF) + (val & 0xF) + old_c) > 0xF);
     cpu_state.registers.f_mut().set_carry(result < a);
     1
 }
@@ -40,7 +40,7 @@ pub fn exec_sub_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < val);
-    cpu_state.registers.f_mut().set_half_carry((a as i8) < (val as i8));
+    cpu_state.registers.f_mut().set_half_carry((a & 0xF) < (val & 0xF));
     1
 }
 
@@ -53,8 +53,10 @@ pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.set_a(result);
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_carry(a < val.wrapping_add(old_c));
-    cpu_state.registers.f_mut().set_half_carry((a as i8) < (val.wrapping_add(old_c) as i8));
+
+    let borrow = val as u16 + old_c as u16;
+    cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
+    cpu_state.registers.f_mut().set_half_carry((a & 0xF) < ((val + old_c) & 0xF));
     1
 }
 

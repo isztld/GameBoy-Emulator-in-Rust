@@ -55,15 +55,41 @@ pub fn exec_rra(cpu_state: &mut CPUState) -> u32 {
 pub fn exec_daa(cpu_state: &mut CPUState) -> u32 {
     let mut a = cpu_state.registers.a();
     let mut adjust = 0;
-    if cpu_state.registers.f().is_carry() { adjust |= 0x60; }
-    if cpu_state.registers.f().is_half_carry() { adjust |= 0x06; }
-    if !cpu_state.registers.f().is_subtraction() {
-        if (a & 0x0F) > 9 { adjust |= 0x06; }
-        if (a & 0xF0) > 0x90 { adjust |= 0x60; }
+    let mut carry = cpu_state.registers.f().is_carry();
+    let f = cpu_state.registers.f();
+
+    if !f.is_subtraction() {
+        // ADD case
+        if f.is_half_carry() || (a & 0x0F) > 9 {
+            adjust += 0x06;
+        }
+        if carry || a > 0x99 {
+            adjust += 0x60;
+            carry = true;
+        }
+        a = a.wrapping_add(adjust);
+    } else {
+        // SUB case
+        if f.is_half_carry() {
+            adjust += 0x06;
+        }
+        if carry {
+            adjust += 0x60;
+        }
+        a = a.wrapping_sub(adjust);
     }
-    a = a.wrapping_add(adjust);
+
     cpu_state.registers.set_a(a);
-    if (adjust & 0x60) != 0 { cpu_state.registers.f_mut().set_carry(true); }
+
+    let f_mut = cpu_state.registers.f_mut();
+    f_mut.set_zero(a == 0);
+    f_mut.set_half_carry(false);
+
+    // Only update carry if it was an ADD
+    if !f.is_subtraction() {
+        f_mut.set_carry(carry);
+    }
+
     1
 }
 
