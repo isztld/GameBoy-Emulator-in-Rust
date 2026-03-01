@@ -21,7 +21,10 @@ pub fn set_r16(registers: &mut Registers, reg: R16Register, value: u16) {
         R16Register::DE => registers.de = value,
         R16Register::HL => registers.hl = value,
         R16Register::SP => registers.sp = value,
-        R16Register::AF => registers.af = value,
+        R16Register::AF => {
+            // Lower 4 bits of F are always zero in hardware
+            registers.af = value & 0xFFF0;
+        }
     }
 }
 

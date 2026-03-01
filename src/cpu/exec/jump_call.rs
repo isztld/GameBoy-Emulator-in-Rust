@@ -46,8 +46,10 @@ pub fn exec_jp_hl(cpu_state: &mut CPUState) -> u32 {
 pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: u16, bus: &mut MemoryBus) -> u32 {
     if cond_condition(cpu_state, cond) {
         let sp = cpu_state.registers.sp;
-        bus.write(sp.wrapping_sub(1), (cpu_state.registers.pc >> 8) as u8);
-        bus.write(sp.wrapping_sub(2), (cpu_state.registers.pc & 0x00FF) as u8);
+        // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
+        let return_pc = cpu_state.registers.pc + 3;
+        bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
+        bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);
         cpu_state.registers.sp = sp.wrapping_sub(2);
         cpu_state.registers.pc = address;
         6
@@ -59,8 +61,10 @@ pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: 
 /// Execute CALL a16
 pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
-    bus.write(sp.wrapping_sub(1), (cpu_state.registers.pc >> 8) as u8);
-    bus.write(sp.wrapping_sub(2), (cpu_state.registers.pc & 0x00FF) as u8);
+    // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
+    let return_pc = cpu_state.registers.pc + 3;
+    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
+    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = address;
     6

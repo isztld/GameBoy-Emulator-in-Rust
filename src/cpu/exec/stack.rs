@@ -49,8 +49,10 @@ pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memor
 /// Execute RST n
 pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
-    bus.write(sp.wrapping_sub(1), (cpu_state.registers.pc >> 8) as u8);
-    bus.write(sp.wrapping_sub(2), (cpu_state.registers.pc & 0x00FF) as u8);
+    // RST is 1 byte, so return address is PC + 1 (next instruction after RST)
+    let return_pc = cpu_state.registers.pc + 1;
+    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
+    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = target as u16;
     4
