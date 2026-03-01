@@ -50,9 +50,10 @@ pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memor
 pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
     // RST is 1 byte, so return address is PC + 1 (next instruction after RST)
+    // Stack grows down, so we write low byte first (at sp-1), then high byte (at sp-2)
     let return_pc = cpu_state.registers.pc + 1;
-    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
-    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);
+    bus.write(sp.wrapping_sub(1), (return_pc & 0x00FF) as u8); // low byte
+    bus.write(sp.wrapping_sub(2), (return_pc >> 8) as u8);     // high byte
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = target as u16;
     4

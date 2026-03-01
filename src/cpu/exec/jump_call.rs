@@ -47,9 +47,10 @@ pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: 
     if cond_condition(cpu_state, cond) {
         let sp = cpu_state.registers.sp;
         // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
+        // Stack grows down, so we write low byte first (at sp-1), then high byte (at sp-2)
         let return_pc = cpu_state.registers.pc + 3;
-        bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
-        bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);
+        bus.write(sp.wrapping_sub(1), (return_pc & 0x00FF) as u8); // low byte
+        bus.write(sp.wrapping_sub(2), (return_pc >> 8) as u8);     // high byte
         cpu_state.registers.sp = sp.wrapping_sub(2);
         cpu_state.registers.pc = address;
         6
@@ -62,9 +63,10 @@ pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: 
 pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
     // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
+    // Stack grows down, so we write low byte first (at sp-1), then high byte (at sp-2)
     let return_pc = cpu_state.registers.pc + 3;
-    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
-    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);
+    bus.write(sp.wrapping_sub(1), (return_pc & 0x00FF) as u8); // low byte
+    bus.write(sp.wrapping_sub(2), (return_pc >> 8) as u8);     // high byte
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = address;
     6
