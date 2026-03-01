@@ -91,31 +91,31 @@ impl CPU {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let value = (high as u16) << 8 | low as u16;
-                (Instruction::LD_R16_IMM16 { dest: R16Register::BC, value }, 3)
+                (Instruction::LdR16Imm16 { dest: R16Register::BC, value }, 3)
             }
-            0x02 => (Instruction::LD_IND_R16_A { src: R16Mem::BC }, 1),
-            0x03 => (Instruction::INC_R16 { reg: R16Register::BC }, 1),
-            0x04 => (Instruction::INC_R8 { reg: R8Register::B }, 1),
-            0x05 => (Instruction::DEC_R8 { reg: R8Register::B }, 1),
+            0x02 => (Instruction::LdIndR16A { src: R16Mem::BC }, 1),
+            0x03 => (Instruction::IncR16 { reg: R16Register::BC }, 1),
+            0x04 => (Instruction::IncR8 { reg: R8Register::B }, 1),
+            0x05 => (Instruction::DecR8 { reg: R8Register::B }, 1),
             0x06 => {
                 let value = bus.read(pc + 1);
-                (Instruction::LD_R8_IMM8 { dest: R8Register::B, value }, 2)
+                (Instruction::LdR8Imm8 { dest: R8Register::B, value }, 2)
             }
             0x07 => (Instruction::RLCA, 1),
             0x08 => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::LD_IND_IMM16_SP { address }, 3)
+                (Instruction::LdIndImm16Sp { address }, 3)
             }
-            0x09 => (Instruction::ADD_HL_R16 { reg: R16Register::BC }, 1),
-            0x0A => (Instruction::LD_A_IND_R16 { dest: R16Mem::BC }, 1),
-            0x0B => (Instruction::DEC_R16 { reg: R16Register::BC }, 1),
-            0x0C => (Instruction::INC_R8 { reg: R8Register::C }, 1),
-            0x0D => (Instruction::DEC_R8 { reg: R8Register::C }, 1),
+            0x09 => (Instruction::AddHlR16 { reg: R16Register::BC }, 1),
+            0x0A => (Instruction::LdAIndR16 { dest: R16Mem::BC }, 1),
+            0x0B => (Instruction::DecR16 { reg: R16Register::BC }, 1),
+            0x0C => (Instruction::IncR8 { reg: R8Register::C }, 1),
+            0x0D => (Instruction::DecR8 { reg: R8Register::C }, 1),
             0x0E => {
                 let value = bus.read(pc + 1);
-                (Instruction::LD_R8_IMM8 { dest: R8Register::C, value }, 2)
+                (Instruction::LdR8Imm8 { dest: R8Register::C, value }, 2)
             }
             0x0F => (Instruction::RRCA, 1),
 
@@ -123,179 +123,176 @@ impl CPU {
             0x40..=0x7F => {
                 let reg_src = R8Register::from_byte(opcode);
                 let reg_dest = R8Register::from_byte((opcode & 0x07) | ((opcode >> 3) & 0x07));
-                (Instruction::LD_R8_R8 { dest: reg_dest, src: reg_src }, 1)
+                (Instruction::LdR8R8 { dest: reg_dest, src: reg_src }, 1)
             }
 
             // Block 2: 8-bit arithmetic (80-BF)
             0x80..=0xBF => {
                 let reg = R8Register::from_byte(opcode);
                 match opcode & 0xC7 {
-                    0x80 => (Instruction::ADD_A_R8 { reg }, 1),
-                    0x88 => (Instruction::ADC_A_R8 { reg }, 1),
-                    0x90 => (Instruction::SUB_A_R8 { reg }, 1),
-                    0x98 => (Instruction::SBC_A_R8 { reg }, 1),
-                    0xA0 => (Instruction::AND_A_R8 { reg }, 1),
-                    0xA8 => (Instruction::XOR_A_R8 { reg }, 1),
-                    0xB0 => (Instruction::OR_A_R8 { reg }, 1),
-                    0xB8 => (Instruction::CP_A_R8 { reg }, 1),
+                    0x80 => (Instruction::AddAR8 { reg }, 1),
+                    0x88 => (Instruction::AdcAR8 { reg }, 1),
+                    0x90 => (Instruction::SubAR8 { reg }, 1),
+                    0x98 => (Instruction::SbcAR8 { reg }, 1),
+                    0xA0 => (Instruction::AndAR8 { reg }, 1),
+                    0xA8 => (Instruction::XorAR8 { reg }, 1),
+                    0xB0 => (Instruction::OrAR8 { reg }, 1),
+                    0xB8 => (Instruction::CpAR8 { reg }, 1),
                     _ => (Instruction::NOP, 1),
                 }
             }
 
             // Block 3: Jumps, calls, returns (C0-FF)
-            0xC0 => (Instruction::RET_COND { cond: Condition::NZ }, 1),
-            0xC1 => (Instruction::POP_R16 { reg: R16Register::BC }, 1),
+            0xC0 => (Instruction::RetCond { cond: Condition::NZ }, 1),
+            0xC1 => (Instruction::PopR16 { reg: R16Register::BC }, 1),
             0xC2 => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::JP_COND_IMM16 { cond: Condition::NZ, address }, 3)
+                (Instruction::JpCondImm16 { cond: Condition::NZ, address }, 3)
             }
             0xC3 => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::JP_IMM16 { address }, 3)
+                (Instruction::JpImm16 { address }, 3)
             }
             0xC4 => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::CALL_COND_IMM16 { cond: Condition::NZ, address }, 3)
+                (Instruction::CallCondImm16 { cond: Condition::NZ, address }, 3)
             }
-            0xC5 => (Instruction::PUSH_R16 { reg: R16Register::BC }, 1),
+            0xC5 => (Instruction::PushR16 { reg: R16Register::BC }, 1),
             0xC6 => {
                 let value = bus.read(pc + 1);
-                (Instruction::ADD_A_IMM8 { value }, 2)
+                (Instruction::AddAImm8 { value }, 2)
             }
             0xC7 => (Instruction::RST { target: 0x00 }, 1),
-            0xC8 => (Instruction::RET_COND { cond: Condition::Z }, 1),
+            0xC8 => (Instruction::RetCond { cond: Condition::Z }, 1),
             0xC9 => (Instruction::RET, 1),
             0xCA => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::JP_COND_IMM16 { cond: Condition::Z, address }, 3)
+                (Instruction::JpCondImm16 { cond: Condition::Z, address }, 3)
             }
             0xCB => {
-                let cb_opcode = bus.read(pc + 1);
-                let cb_instr = crate::cpu::instructions::CBInstruction::from_byte(opcode, cb_opcode);
-                // CB instructions are handled separately
-                // For now, return NOP with 2 bytes
+                // CB instruction handling is done separately in the main decode loop
                 (Instruction::NOP, 2)
             }
             0xCC => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::CALL_COND_IMM16 { cond: Condition::Z, address }, 3)
+                (Instruction::CallCondImm16 { cond: Condition::Z, address }, 3)
             }
             0xCD => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::CALL_IMM16 { address }, 3)
+                (Instruction::CallImm16 { address }, 3)
             }
             0xCE => {
                 let value = bus.read(pc + 1);
-                (Instruction::ADC_A_IMM8 { value }, 2)
+                (Instruction::AdcAImm8 { value }, 2)
             }
             0xCF => (Instruction::RST { target: 0x08 }, 1),
-            0xD0 => (Instruction::RET_COND { cond: Condition::NC }, 1),
-            0xD1 => (Instruction::POP_R16 { reg: R16Register::DE }, 1),
+            0xD0 => (Instruction::RetCond { cond: Condition::NC }, 1),
+            0xD1 => (Instruction::PopR16 { reg: R16Register::DE }, 1),
             0xD2 => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::JP_COND_IMM16 { cond: Condition::NC, address }, 3)
+                (Instruction::JpCondImm16 { cond: Condition::NC, address }, 3)
             }
             0xD4 => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::CALL_COND_IMM16 { cond: Condition::NC, address }, 3)
+                (Instruction::CallCondImm16 { cond: Condition::NC, address }, 3)
             }
-            0xD5 => (Instruction::PUSH_R16 { reg: R16Register::DE }, 1),
+            0xD5 => (Instruction::PushR16 { reg: R16Register::DE }, 1),
             0xD6 => {
                 let value = bus.read(pc + 1);
-                (Instruction::SUB_A_IMM8 { value }, 2)
+                (Instruction::SubAImm8 { value }, 2)
             }
             0xD7 => (Instruction::RST { target: 0x10 }, 1),
-            0xD8 => (Instruction::RET_COND { cond: Condition::C }, 1),
+            0xD8 => (Instruction::RetCond { cond: Condition::C }, 1),
             0xD9 => (Instruction::RETI, 1),
             0xDA => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::JP_COND_IMM16 { cond: Condition::C, address }, 3)
+                (Instruction::JpCondImm16 { cond: Condition::C, address }, 3)
             }
             0xDC => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::CALL_COND_IMM16 { cond: Condition::C, address }, 3)
+                (Instruction::CallCondImm16 { cond: Condition::C, address }, 3)
             }
             0xDE => {
                 let value = bus.read(pc + 1);
-                (Instruction::SBC_A_IMM8 { value }, 2)
+                (Instruction::SbcAImm8 { value }, 2)
             }
             0xDF => (Instruction::RST { target: 0x18 }, 1),
             0xE0 => {
                 let address = bus.read(pc + 1);
-                (Instruction::LDH_IND_IMM8_A { address }, 2)
+                (Instruction::LdhIndImm8A { address }, 2)
             }
-            0xE1 => (Instruction::POP_R16 { reg: R16Register::HL }, 1),
-            0xE2 => (Instruction::LDH_IND_C_A, 1),
-            0xE5 => (Instruction::PUSH_R16 { reg: R16Register::HL }, 1),
+            0xE1 => (Instruction::PopR16 { reg: R16Register::HL }, 1),
+            0xE2 => (Instruction::LdhIndCA, 1),
+            0xE5 => (Instruction::PushR16 { reg: R16Register::HL }, 1),
             0xE6 => {
                 let value = bus.read(pc + 1);
-                (Instruction::AND_A_IMM8 { value }, 2)
+                (Instruction::AndAImm8 { value }, 2)
             }
             0xE7 => (Instruction::RST { target: 0x20 }, 1),
             0xE8 => {
                 let value = bus.read(pc + 1) as i8;
-                (Instruction::ADD_SP_IMM8 { value }, 2)
+                (Instruction::AddSpImm8 { value }, 2)
             }
-            0xE9 => (Instruction::JP_HL, 1),
+            0xE9 => (Instruction::JpHl, 1),
             0xEA => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::LD_IND_IMM16_A { address }, 3)
+                (Instruction::LdIndImm16A { address }, 3)
             }
             0xEE => {
                 let value = bus.read(pc + 1);
-                (Instruction::XOR_A_IMM8 { value }, 2)
+                (Instruction::XorAImm8 { value }, 2)
             }
             0xEF => (Instruction::RST { target: 0x28 }, 1),
             0xF0 => {
                 let address = bus.read(pc + 1);
-                (Instruction::LDH_A_IND_IMM8 { address }, 2)
+                (Instruction::LdhAIndImm8 { address }, 2)
             }
-            0xF1 => (Instruction::POP_R16 { reg: R16Register::HL }, 1),
-            0xF2 => (Instruction::LDH_A_IND_C, 1),
+            0xF1 => (Instruction::PopR16 { reg: R16Register::HL }, 1),
+            0xF2 => (Instruction::LdhAC, 1),
             0xF3 => (Instruction::DI, 1),
-            0xF5 => (Instruction::PUSH_R16 { reg: R16Register::HL }, 1),
+            0xF5 => (Instruction::PushR16 { reg: R16Register::HL }, 1),
             0xF6 => {
                 let value = bus.read(pc + 1);
-                (Instruction::OR_A_IMM8 { value }, 2)
+                (Instruction::OrAImm8 { value }, 2)
             }
             0xF7 => (Instruction::RST { target: 0x30 }, 1),
             0xF8 => {
                 let value = bus.read(pc + 1) as i8;
-                (Instruction::LD_HL_SP_IMM8 { value }, 2)
+                (Instruction::LdHlSpImm8 { value }, 2)
             }
-            0xF9 => (Instruction::LD_SP_HL, 1),
+            0xF9 => (Instruction::LdSpHl, 1),
             0xFA => {
                 let low = bus.read(pc + 1) as u8;
                 let high = bus.read(pc + 2) as u8;
                 let address = (high as u16) << 8 | low as u16;
-                (Instruction::LD_A_IND_IMM16 { address }, 3)
+                (Instruction::LdAIndImm16 { address }, 3)
             }
             0xFB => (Instruction::EI, 1),
             0xFE => {
                 let value = bus.read(pc + 1);
-                (Instruction::CP_A_IMM8 { value }, 2)
+                (Instruction::CpAImm8 { value }, 2)
             }
             0xFF => (Instruction::RST { target: 0x38 }, 1),
 
@@ -308,7 +305,7 @@ impl CPU {
         match instruction {
             Instruction::NOP => 1,
 
-            Instruction::LD_R16_IMM16 { dest, value } => {
+            Instruction::LdR16Imm16 { dest, value } => {
                 match dest {
                     R16Register::BC => self.state.registers.bc = value,
                     R16Register::DE => self.state.registers.de = value,
@@ -318,7 +315,7 @@ impl CPU {
                 3
             }
 
-            Instruction::LD_IND_R16_A { src } => {
+            Instruction::LdIndR16A { src } => {
                 let address = match src {
                     R16Mem::BC => self.state.registers.bc,
                     R16Mem::DE => self.state.registers.de,
@@ -328,7 +325,7 @@ impl CPU {
                 2
             }
 
-            Instruction::LD_A_IND_R16 { dest } => {
+            Instruction::LdAIndR16 { dest } => {
                 let address = match dest {
                     R16Mem::BC => self.state.registers.bc,
                     R16Mem::DE => self.state.registers.de,
@@ -338,13 +335,13 @@ impl CPU {
                 2
             }
 
-            Instruction::LD_IND_IMM16_SP { address } => {
+            Instruction::LdIndImm16Sp { address } => {
                 bus.write(address, (self.state.registers.sp & 0x00FF) as u8);
                 bus.write(address + 1, (self.state.registers.sp >> 8) as u8);
                 5
             }
 
-            Instruction::INC_R16 { reg } => {
+            Instruction::IncR16 { reg } => {
                 match reg {
                     R16Register::BC => self.state.registers.bc = self.state.registers.bc.wrapping_add(1),
                     R16Register::DE => self.state.registers.de = self.state.registers.de.wrapping_add(1),
@@ -354,7 +351,7 @@ impl CPU {
                 2
             }
 
-            Instruction::DEC_R16 { reg } => {
+            Instruction::DecR16 { reg } => {
                 match reg {
                     R16Register::BC => self.state.registers.bc = self.state.registers.bc.wrapping_sub(1),
                     R16Register::DE => self.state.registers.de = self.state.registers.de.wrapping_sub(1),
@@ -364,7 +361,7 @@ impl CPU {
                 2
             }
 
-            Instruction::ADD_HL_R16 { reg } => {
+            Instruction::AddHlR16 { reg } => {
                 let hl = self.state.registers.hl as u32;
                 let val = match reg {
                     R16Register::BC => self.state.registers.bc as u32,
@@ -386,7 +383,7 @@ impl CPU {
                 2
             }
 
-            Instruction::INC_R8 { reg } => {
+            Instruction::IncR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 self.set_r8(reg, val.wrapping_add(1), bus);
                 // Update flags
@@ -399,7 +396,7 @@ impl CPU {
                 1
             }
 
-            Instruction::DEC_R8 { reg } => {
+            Instruction::DecR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 self.set_r8(reg, val.wrapping_sub(1), bus);
                 // Update flags
@@ -412,7 +409,7 @@ impl CPU {
                 1
             }
 
-            Instruction::LD_R8_IMM8 { dest, value } => {
+            Instruction::LdR8Imm8 { dest, value } => {
                 self.set_r8(dest, value, bus);
                 2
             }
@@ -506,12 +503,12 @@ impl CPU {
                 1
             }
 
-            Instruction::JR_IMM8 { offset } => {
+            Instruction::JrImm8 { offset } => {
                 self.state.registers.pc = self.state.registers.pc.wrapping_add(offset as i16 as u16);
                 3
             }
 
-            Instruction::JR_COND_IMM8 { cond, offset } => {
+            Instruction::JrCondImm8 { cond, offset } => {
                 let should_jump = self.condition_met(cond);
                 self.state.registers.pc = self.state.registers.pc.wrapping_add(offset as i16 as u16);
                 if should_jump { 3 } else { 2 }
@@ -527,12 +524,12 @@ impl CPU {
                 1
             }
 
-            Instruction::LD_R8_R8 { dest, src } => {
+            Instruction::LdR8R8 { dest, src } => {
                 self.set_r8(dest, self.get_r8(src, bus), bus);
                 1
             }
 
-            Instruction::ADD_A_R8 { reg } => {
+            Instruction::AddAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let a = self.state.registers.a();
                 let result = a.wrapping_add(val);
@@ -547,7 +544,7 @@ impl CPU {
                 1
             }
 
-            Instruction::ADC_A_R8 { reg } => {
+            Instruction::AdcAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let a = self.state.registers.a();
                 let carry = if self.state.registers.f().is_carry() { 1 } else { 0 };
@@ -564,7 +561,7 @@ impl CPU {
                 1
             }
 
-            Instruction::SUB_A_R8 { reg } => {
+            Instruction::SubAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let a = self.state.registers.a();
                 let result = a.wrapping_sub(val);
@@ -579,7 +576,7 @@ impl CPU {
                 1
             }
 
-            Instruction::SBC_A_R8 { reg } => {
+            Instruction::SbcAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let a = self.state.registers.a();
                 let carry = if self.state.registers.f().is_carry() { 1 } else { 0 };
@@ -596,7 +593,7 @@ impl CPU {
                 1
             }
 
-            Instruction::AND_A_R8 { reg } => {
+            Instruction::AndAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let result = self.state.registers.a() & val;
                 self.state.registers.set_a(result);
@@ -610,7 +607,7 @@ impl CPU {
                 1
             }
 
-            Instruction::XOR_A_R8 { reg } => {
+            Instruction::XorAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let result = self.state.registers.a() ^ val;
                 self.state.registers.set_a(result);
@@ -624,7 +621,7 @@ impl CPU {
                 1
             }
 
-            Instruction::OR_A_R8 { reg } => {
+            Instruction::OrAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let result = self.state.registers.a() | val;
                 self.state.registers.set_a(result);
@@ -638,7 +635,7 @@ impl CPU {
                 1
             }
 
-            Instruction::CP_A_R8 { reg } => {
+            Instruction::CpAR8 { reg } => {
                 let val = self.get_r8(reg, bus);
                 let a = self.state.registers.a();
                 let result = a.wrapping_sub(val);
@@ -652,7 +649,7 @@ impl CPU {
                 1
             }
 
-            Instruction::ADD_A_IMM8 { value } => {
+            Instruction::AddAImm8 { value } => {
                 let a = self.state.registers.a();
                 let result = a.wrapping_add(value);
                 self.state.registers.set_a(result);
@@ -666,7 +663,7 @@ impl CPU {
                 2
             }
 
-            Instruction::ADC_A_IMM8 { value } => {
+            Instruction::AdcAImm8 { value } => {
                 let a = self.state.registers.a();
                 let carry = if self.state.registers.f().is_carry() { 1 } else { 0 };
                 let result = a.wrapping_add(value).wrapping_add(carry);
@@ -682,7 +679,7 @@ impl CPU {
                 2
             }
 
-            Instruction::SUB_A_IMM8 { value } => {
+            Instruction::SubAImm8 { value } => {
                 let a = self.state.registers.a();
                 let result = a.wrapping_sub(value);
                 self.state.registers.set_a(result);
@@ -696,7 +693,7 @@ impl CPU {
                 2
             }
 
-            Instruction::SBC_A_IMM8 { value } => {
+            Instruction::SbcAImm8 { value } => {
                 let a = self.state.registers.a();
                 let carry = if self.state.registers.f().is_carry() { 1 } else { 0 };
                 let result = a.wrapping_sub(value).wrapping_sub(carry);
@@ -712,7 +709,7 @@ impl CPU {
                 2
             }
 
-            Instruction::AND_A_IMM8 { value } => {
+            Instruction::AndAImm8 { value } => {
                 let result = self.state.registers.a() & value;
                 self.state.registers.set_a(result);
 
@@ -725,7 +722,7 @@ impl CPU {
                 2
             }
 
-            Instruction::XOR_A_IMM8 { value } => {
+            Instruction::XorAImm8 { value } => {
                 let result = self.state.registers.a() ^ value;
                 self.state.registers.set_a(result);
 
@@ -738,7 +735,7 @@ impl CPU {
                 2
             }
 
-            Instruction::OR_A_IMM8 { value } => {
+            Instruction::OrAImm8 { value } => {
                 let result = self.state.registers.a() | value;
                 self.state.registers.set_a(result);
 
@@ -751,7 +748,7 @@ impl CPU {
                 2
             }
 
-            Instruction::CP_A_IMM8 { value } => {
+            Instruction::CpAImm8 { value } => {
                 let a = self.state.registers.a();
                 let result = a.wrapping_sub(value);
 
@@ -764,7 +761,7 @@ impl CPU {
                 2
             }
 
-            Instruction::RET_COND { cond } => {
+            Instruction::RetCond { cond } => {
                 if self.condition_met(cond) {
                     let low = bus.read(self.state.registers.sp) as u8;
                     self.state.registers.sp = self.state.registers.sp.wrapping_add(1);
@@ -800,24 +797,24 @@ impl CPU {
                 4
             }
 
-            Instruction::JP_COND_IMM16 { cond, address } => {
+            Instruction::JpCondImm16 { cond, address } => {
                 if self.condition_met(cond) {
                     self.state.registers.pc = address;
                 }
                 3
             }
 
-            Instruction::JP_IMM16 { address } => {
+            Instruction::JpImm16 { address } => {
                 self.state.registers.pc = address;
                 4
             }
 
-            Instruction::JP_HL => {
+            Instruction::JpHl => {
                 self.state.registers.pc = self.state.registers.hl;
                 1
             }
 
-            Instruction::CALL_COND_IMM16 { cond, address } => {
+            Instruction::CallCondImm16 { cond, address } => {
                 if self.condition_met(cond) {
                     let sp = self.state.registers.sp;
                     bus.write(sp.wrapping_sub(1), (self.state.registers.pc >> 8) as u8);
@@ -830,7 +827,7 @@ impl CPU {
                 }
             }
 
-            Instruction::CALL_IMM16 { address } => {
+            Instruction::CallImm16 { address } => {
                 let sp = self.state.registers.sp;
                 bus.write(sp.wrapping_sub(1), (self.state.registers.pc >> 8) as u8);
                 bus.write(sp.wrapping_sub(2), (self.state.registers.pc & 0x00FF) as u8);
@@ -848,7 +845,7 @@ impl CPU {
                 4
             }
 
-            Instruction::POP_R16 { reg } => {
+            Instruction::PopR16 { reg } => {
                 let low = bus.read(self.state.registers.sp) as u8;
                 self.state.registers.sp = self.state.registers.sp.wrapping_add(1);
                 let high = bus.read(self.state.registers.sp) as u8;
@@ -863,7 +860,7 @@ impl CPU {
                 3
             }
 
-            Instruction::PUSH_R16 { reg } => {
+            Instruction::PushR16 { reg } => {
                 let sp = self.state.registers.sp;
                 let value = match reg {
                     R16Register::BC => self.state.registers.bc,
@@ -876,41 +873,41 @@ impl CPU {
                 5
             }
 
-            Instruction::LDH_IND_C_A => {
+            Instruction::LdhIndCA => {
                 let address = 0xFF00 | (self.state.registers.c() as u16);
                 bus.write(address, self.state.registers.a());
                 2
             }
 
-            Instruction::LDH_IND_IMM8_A { address } => {
+            Instruction::LdhIndImm8A { address } => {
                 let address = 0xFF00 | (address as u16);
                 bus.write(address, self.state.registers.a());
                 3
             }
 
-            Instruction::LD_IND_IMM16_A { address } => {
+            Instruction::LdIndImm16A { address } => {
                 bus.write(address, self.state.registers.a());
                 4
             }
 
-            Instruction::LDH_A_IND_C => {
+            Instruction::LdhAC => {
                 let address = 0xFF00 | (self.state.registers.c() as u16);
                 self.state.registers.set_a(bus.read(address));
                 2
             }
 
-            Instruction::LDH_A_IND_IMM8 { address } => {
+            Instruction::LdhAIndImm8 { address } => {
                 let address = 0xFF00 | (address as u16);
                 self.state.registers.set_a(bus.read(address));
                 3
             }
 
-            Instruction::LD_A_IND_IMM16 { address } => {
+            Instruction::LdAIndImm16 { address } => {
                 self.state.registers.set_a(bus.read(address));
                 4
             }
 
-            Instruction::ADD_SP_IMM8 { value } => {
+            Instruction::AddSpImm8 { value } => {
                 let sp = self.state.registers.sp as i16;
                 let offset = value as i16;
                 let result = sp.wrapping_add(offset) as u16;
@@ -927,7 +924,7 @@ impl CPU {
                 4
             }
 
-            Instruction::LD_HL_SP_IMM8 { value } => {
+            Instruction::LdHlSpImm8 { value } => {
                 let sp = self.state.registers.sp as i16;
                 let offset = value as i16;
                 let result = sp.wrapping_add(offset) as u16;
@@ -944,7 +941,7 @@ impl CPU {
                 3
             }
 
-            Instruction::LD_SP_HL => {
+            Instruction::LdSpHl => {
                 self.state.registers.sp = self.state.registers.hl;
                 2
             }
@@ -958,9 +955,6 @@ impl CPU {
                 self.state.ime = true;
                 1
             }
-
-            // CB instructions handled separately
-            _ => 1,
         }
     }
 

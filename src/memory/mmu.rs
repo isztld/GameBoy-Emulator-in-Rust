@@ -105,7 +105,6 @@ impl MemoryBus {
             0xFF00..=0xFF7F => self.io[(address - 0xFF00) as usize],
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize],
             0xFFFF => self.ie,
-            _ => 0xFF, // Open bus for invalid addresses
         }
     }
 

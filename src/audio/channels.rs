@@ -97,6 +97,7 @@ impl Default for WaveChannel {
 
 /// Noise channel
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct NoiseChannel {
     enabled: bool,
     shift_register: u32,

@@ -215,6 +215,7 @@ impl Default for AudioProcessor {
 
 /// Square Wave Channel (Channels 1 and 2)
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SquareChannel {
     channel_id: usize,
     frequency: u16,
