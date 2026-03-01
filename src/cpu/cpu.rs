@@ -19,12 +19,14 @@ pub struct CPU {
 impl CPU {
     /// Create a new CPU
     pub fn new() -> Self {
-        CPU {
+        let mut cpu = CPU {
             state: CPUState::new(),
             cycles: 0,
             halted: false,
             stop_halt: false,
-        }
+        };
+        cpu.reset();
+        cpu
     }
 
     /// Reset the CPU to power-on state
@@ -75,11 +77,32 @@ impl CPU {
         // Execute instruction
         let cycles = self.execute_instruction(instruction, bus);
 
-        // Update PC
-        self.state.registers.pc += opcode_bytes as u16;
-
         // Update cycle count
         self.cycles += cycles as u32;
+
+        // For instructions that modify PC themselves (jumps, calls, returns, RST),
+        // we don't add opcode_bytes. The instruction's execute_instruction handles it.
+        // For other instructions, we add opcode_bytes to advance PC.
+        match instruction {
+            Instruction::JrImm8 { .. }
+            | Instruction::JrCondImm8 { .. }
+            | Instruction::JpImm16 { .. }
+            | Instruction::JpCondImm16 { .. }
+            | Instruction::JpHl
+            | Instruction::CallImm16 { .. }
+            | Instruction::CallCondImm16 { .. }
+            | Instruction::RET
+            | Instruction::RetCond { .. }
+            | Instruction::RETI
+            | Instruction::RST { .. }
+            | Instruction::LdHlSpImm8 { .. }
+            | Instruction::LdSpHl => {
+                // PC already set by execute_instruction, nothing to do
+            }
+            _ => {
+                self.state.registers.pc += opcode_bytes as u16;
+            }
+        }
 
         cycles as u32
     }
@@ -902,10 +925,9 @@ impl CPU {
             }
 
             Instruction::RET => {
-                let low = bus.read(self.state.registers.sp) as u8;
-                self.state.registers.sp = self.state.registers.sp.wrapping_add(1);
-                let high = bus.read(self.state.registers.sp) as u8;
-                self.state.registers.sp = self.state.registers.sp.wrapping_add(1);
+                let low = bus.read(self.state.registers.sp.wrapping_add(1)) as u8;
+                self.state.registers.sp = self.state.registers.sp.wrapping_add(2);
+                let high = bus.read(self.state.registers.sp.wrapping_sub(2)) as u8;
                 let address = (high as u16) << 8 | low as u16;
                 self.state.registers.pc = address;
                 4
@@ -913,14 +935,13 @@ impl CPU {
 
             Instruction::RETI => {
                 // RETI pops PC and enables interrupts
-                let low = bus.read(self.state.registers.sp) as u8;
-                self.state.registers.sp = self.state.registers.sp.wrapping_add(1);
-                let high = bus.read(self.state.registers.sp) as u8;
-                self.state.registers.sp = self.state.registers.sp.wrapping_add(1);
-                let address = (high as u16) << 8 | low as u16;
-                self.state.registers.pc = address;
-                self.state.ime = true;
-                4
+                let low = bus.read(self.state.registers.sp.wrapping_add(1)) as u8;
+                    self.state.registers.sp = self.state.registers.sp.wrapping_add(2);
+                    let high = bus.read(self.state.registers.sp.wrapping_sub(2)) as u8;
+                    let address = (high as u16) << 8 | low as u16;
+                    self.state.registers.pc = address;
+                    self.state.ime = true;
+                    4
             }
 
             Instruction::JpCondImm16 { cond, address } => {
@@ -942,9 +963,11 @@ impl CPU {
 
             Instruction::CallCondImm16 { cond, address } => {
                 if self.condition_met(cond) {
+                    // Return address should be pc + 3 (address after this CALL)
+                    let return_addr = self.state.registers.pc.wrapping_add(3);
                     let sp = self.state.registers.sp;
-                    bus.write(sp.wrapping_sub(1), (self.state.registers.pc >> 8) as u8);
-                    bus.write(sp.wrapping_sub(2), (self.state.registers.pc & 0x00FF) as u8);
+                    bus.write(sp.wrapping_sub(2), (return_addr >> 8) as u8);
+                    bus.write(sp.wrapping_sub(1), (return_addr & 0x00FF) as u8);
                     self.state.registers.sp = sp.wrapping_sub(2);
                     self.state.registers.pc = address;
                     6
@@ -954,9 +977,12 @@ impl CPU {
             }
 
             Instruction::CallImm16 { address } => {
+                // Return address should be the address of the next instruction after the CALL (pc + 3)
+                let return_addr = self.state.registers.pc.wrapping_add(3);
                 let sp = self.state.registers.sp;
-                bus.write(sp.wrapping_sub(1), (self.state.registers.pc >> 8) as u8);
-                bus.write(sp.wrapping_sub(2), (self.state.registers.pc & 0x00FF) as u8);
+                // Push high byte then low byte onto the stack (stack grows downwards)
+                bus.write(sp.wrapping_sub(2), (return_addr >> 8) as u8);
+                bus.write(sp.wrapping_sub(1), (return_addr & 0x00FF) as u8);
                 self.state.registers.sp = sp.wrapping_sub(2);
                 self.state.registers.pc = address;
                 6
@@ -964,8 +990,9 @@ impl CPU {
 
             Instruction::RST { target } => {
                 let sp = self.state.registers.sp;
-                bus.write(sp.wrapping_sub(1), (self.state.registers.pc >> 8) as u8);
-                bus.write(sp.wrapping_sub(2), (self.state.registers.pc & 0x00FF) as u8);
+                let return_addr = self.state.registers.pc.wrapping_add(3);
+                bus.write(sp.wrapping_sub(2), (return_addr >> 8) as u8);
+                bus.write(sp.wrapping_sub(1), (return_addr & 0x00FF) as u8);
                 self.state.registers.sp = sp.wrapping_sub(2);
                 self.state.registers.pc = target as u16;
                 4
@@ -988,15 +1015,17 @@ impl CPU {
 
             Instruction::PushR16 { reg } => {
                 let sp = self.state.registers.sp;
-                let value = match reg {
-                    R16Register::BC => self.state.registers.bc,
-                    R16Register::DE => self.state.registers.de,
-                    R16Register::HL => self.state.registers.hl,
-                    R16Register::SP => self.state.registers.sp,
-                };
-                bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);
-                self.state.registers.sp = sp.wrapping_sub(2);
-                5
+                    let value = match reg {
+                        R16Register::BC => self.state.registers.bc,
+                        R16Register::DE => self.state.registers.de,
+                        R16Register::HL => self.state.registers.hl,
+                        R16Register::SP => self.state.registers.sp,
+                    };
+                    // Write low byte at lower address, high byte at higher address
+                    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);
+                    bus.write(sp.wrapping_sub(1), (value >> 8) as u8);
+                    self.state.registers.sp = sp.wrapping_sub(2);
+                    5
             }
 
             Instruction::LdhIndCA => {
@@ -1529,8 +1558,8 @@ mod tests {
         let mut bus = MemoryBus::new(rom);
         let cycles = cpu.execute(&mut bus);
         assert_eq!(cycles, 2);
-        // PC should be at 0x0003 after the JR (PC was 0 before execute, now at 3)
-        assert_eq!(cpu.state.registers.pc, 3);
+        // After fetching 2 bytes, PC = 0x0002, then offset +2 applied → 0x0004
+        assert_eq!(cpu.state.registers.pc, 0x0004);
     }
 
     #[test]

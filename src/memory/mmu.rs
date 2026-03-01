@@ -135,7 +135,7 @@ impl MemoryBus {
         // Not usable area
         // On DMG: returns $FF when OAM blocked, $00 otherwise
         // On CGB: returns high nibble of lower address byte twice
-        ((address & 0x0F00) >> 8) as u8
+        ((address & 0x00F0) >> 4) as u8
     }
 
     /// Write to I/O registers
@@ -145,7 +145,7 @@ impl MemoryBus {
             0x00 => {
                 // P1/JOYP - Joypad
                 // Only writes to select which buttons to read
-                self.io[offset] = (self.io[offset] & 0x0F) | (value & 0xF0);
+                self.io[offset] = value & 0xF0;
             }
             0x01 => {
                 // SB - Serial transfer data
