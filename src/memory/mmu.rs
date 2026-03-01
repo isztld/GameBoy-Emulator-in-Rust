@@ -16,6 +16,7 @@
 /// - FFFF: Interrupt Enable (IE) register
 
 use crate::memory::mbc::MemoryBankController;
+use std::io::Write;
 
 /// Memory bus for the GameBoy
 #[derive(Debug)]
@@ -98,7 +99,7 @@ impl MemoryBus {
             0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize], // WRAM bank 1
             0xE000..=0xFDFF => {
                 // Echo RAM - mirror of C000-DDFF
-                self.wram[(address - 0xE000 + 0xC000) as usize]
+                self.wram[(address - 0xE000) as usize]
             }
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize],
             0xFEA0..=0xFEFF => self.read_fea0(address),
@@ -119,7 +120,7 @@ impl MemoryBus {
             0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize] = value, // WRAM bank 1
             0xE000..=0xFDFF => {
                 // Echo RAM
-                self.wram[(address - 0xE000 + 0xC000) as usize] = value;
+                self.wram[(address - 0xE000) as usize] = value;
             }
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize] = value,
             0xFF00..=0xFF7F => self.write_io(address, value),
@@ -152,7 +153,15 @@ impl MemoryBus {
             }
             0x02 => {
                 // SC - Serial transfer control
-                self.io[offset] = value;
+                // Bit 7 is transfer start (auto-cleared when transfer completes)
+                self.io[offset] = value & 0x7F; // Clear bit 7 (transfer complete)
+                // If transfer was requested (bit 7 was set), output the data
+                if value & 0x80 != 0 {
+                    let data = self.io[0x01];
+                    // Output character to stdout
+                    print!("{}", data as char);
+                    std::io::stdout().flush().ok();
+                }
             }
             0x04 => {
                 // DIV - Divider register (write resets to 0)
