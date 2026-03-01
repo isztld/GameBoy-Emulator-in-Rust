@@ -510,7 +510,7 @@ mod tests {
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_carry());
-        assert!(!cpu.state.registers.f().is_zero());
+        assert!(cpu.state.registers.f().is_zero()); // Result is 0, so Z flag is set
     }
 
     #[test]
@@ -535,6 +535,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x10);
         cpu.state.registers.set_b(0x20);
+        cpu.state.registers.f_mut().set_carry(false); // Clear carry from reset
 
         let instruction = crate::cpu::instructions::Instruction::AdcAR8 {
             reg: crate::cpu::instructions::R8Register::B,

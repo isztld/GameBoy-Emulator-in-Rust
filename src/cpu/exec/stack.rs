@@ -58,13 +58,17 @@ pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u3
 
 /// Execute ADD SP, r8
 pub fn exec_add_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
-    let sp = cpu_state.registers.sp as i32;
-    let result = sp.wrapping_add(value as i32) as u16;
+    let sp = cpu_state.registers.sp;
+    let result = sp.wrapping_add(value as u16);
     cpu_state.registers.sp = result;
     cpu_state.registers.f_mut().set_zero(false);
     cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (value as i32 & 0x0F) > 0x0F);
-    cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (value as i32 & 0xFF) > 0xFF);
+    // Half carry: carry from bit 3 to bit 4
+    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (value as u16 & 0x0F) > 0x0F);
+    // Carry: set when there's a borrow from bit 15 (for negative values)
+    // For ADD SP, r8 with negative value: carry is set when lower byte underflows
+    let result_i16 = ((sp as i16).wrapping_add(value as i16)) as u16;
+    cpu_state.registers.f_mut().set_carry(result_i16 < sp);
     4
 }
 
