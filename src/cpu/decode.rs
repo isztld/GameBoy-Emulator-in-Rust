@@ -139,9 +139,10 @@ pub fn decode_instruction(_cpu_state: &crate::cpu::CPUState, bus: &MemoryBus, pc
         0x3F => (Instruction::CCF, 1),
 
         // Block 1: 40-7F (8-bit register-to-register loads)
+        // Opcode format: dd ddd ddd where upper 3 bits are src, lower 3 bits are dest
         0x40..=0x7F => {
-            let reg_src = R8Register::from_byte(opcode);
-            let reg_dest = R8Register::from_byte((opcode & 0x07) | ((opcode >> 3) & 0x07));
+            let reg_src = R8Register::from_byte((opcode >> 3) & 0x07);
+            let reg_dest = R8Register::from_byte(opcode & 0x07);
             (Instruction::LdR8R8 { dest: reg_dest, src: reg_src }, 1)
         }
 
