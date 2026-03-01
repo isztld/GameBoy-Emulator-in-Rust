@@ -439,13 +439,13 @@ mod tests {
     fn test_ldh_ind_c_a() {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.set_c(0x02);
+        cpu.state.registers.set_c(0x01); // Use 0xFF01 (SB) which stores full value
         cpu.state.registers.set_a(0xBB);
 
         let instruction = crate::cpu::instructions::Instruction::LdhIndCA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
 
-        assert_eq!(bus.read(0xFF02), 0xBB);
+        assert_eq!(bus.read(0xFF01), 0xBB);
     }
 
     #[test]
@@ -453,8 +453,8 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        cpu.state.registers.set_c(0x02);
-        bus.write(0xFF02, 0xCC);
+        cpu.state.registers.set_c(0x01); // Use 0xFF01 (SB) which stores full value
+        bus.write(0xFF01, 0xCC);
 
         let instruction = crate::cpu::instructions::Instruction::LdhAC;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
