@@ -1784,7 +1784,9 @@ mod tests {
         cpu.state.registers.set_a(0x30);
         cpu.state.registers.set_b(0x10);
         cpu.state.registers.pc = 0x0000;
-        cpu.state.registers.f().set_carry(true);
+        let mut flags = cpu.state.registers.f();
+        flags.set_carry(true);
+        cpu.state.registers.set_f(flags);
         let rom = vec![0x98]; // SBC A, B
         let mut bus = MemoryBus::new(rom);
         let cycles = cpu.execute(&mut bus);
@@ -1925,7 +1927,9 @@ mod tests {
     fn test_sbc_a_imm8() {
         let mut cpu = CPU::new();
         cpu.state.registers.set_a(0x30);
-        cpu.state.registers.f().set_carry(true);
+        let mut flags = cpu.state.registers.f();
+        flags.set_carry(true);
+        cpu.state.registers.set_f(flags);
         cpu.state.registers.pc = 0x0000;
         let rom = vec![0xDE, 0x10]; // SBC A, $10
         let mut bus = MemoryBus::new(rom);
@@ -2036,7 +2040,9 @@ mod tests {
     #[test]
     fn test_ccf_with_carry() {
         let mut cpu = CPU::new();
-        cpu.state.registers.f().set_carry(true);
+        let mut flags = cpu.state.registers.f();
+        flags.set_carry(true);
+        cpu.state.registers.set_f(flags);
         cpu.state.registers.pc = 0x0000;
         let rom = vec![0x3F]; // CCF
         let mut bus = MemoryBus::new(rom);
@@ -2231,7 +2237,9 @@ mod tests {
     fn test_jp_cond_c_taken() {
         let mut cpu = CPU::new();
         cpu.state.registers.pc = 0x0000;
-        cpu.state.registers.f().set_carry(true);
+        let mut flags = cpu.state.registers.f();
+        flags.set_carry(true);
+        cpu.state.registers.set_f(flags);
         let rom = vec![0xDA, 0x50, 0x80]; // JP C, $8050
         let mut bus = MemoryBus::new(rom);
         let cycles = cpu.execute(&mut bus);
