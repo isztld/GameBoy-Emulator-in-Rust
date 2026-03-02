@@ -171,6 +171,9 @@ impl System {
             // appropriate.
             self.ppu.update(&mut self.mmu);
 
+            // Sync PPU's LY value to MMU's I/O register so CPU reads can see current scanline
+            self.mmu.update_ly(self.ppu.get_ly());
+
             // AudioProcessor::clock advances the APU sequencer.
             self.apu.clock();
         }

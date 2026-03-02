@@ -273,6 +273,13 @@ impl MemoryBus {
     pub fn get_rom(&self) -> &[u8] {
         &self.rom
     }
+
+    /// Update the LY I/O register from PPU value
+    /// This is needed because the PPU updates its internal ly counter,
+    /// but the MMU's io array needs to reflect this for CPU reads.
+    pub fn update_ly(&mut self, ly: u8) {
+        self.io[68] = ly; // 0xFF44 - 0xFF00 = 68
+    }
 }
 
 #[cfg(test)]
