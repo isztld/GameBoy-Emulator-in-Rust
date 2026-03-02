@@ -309,7 +309,7 @@ mod tests {
         assert_eq!(bus.read(0xFF00), 0xCF); // P1/JOYP
         assert_eq!(bus.read(0xFF04), 0x00); // DIV
         assert_eq!(bus.read(0xFF07), 0xF8); // TAC
-        assert_eq!(bus.read(0xFF0F), 0xE1); // IF
+        assert_eq!(bus.read(0xFF0F), 0xE0); // IF
         assert_eq!(bus.read(0xFF10), 0x80); // NR10
         assert_eq!(bus.read(0xFF11), 0xBF); // NR11
         assert_eq!(bus.read(0xFF12), 0xF3); // NR12
