@@ -208,6 +208,7 @@ impl Default for Registers {
 pub struct CPUState {
     pub registers: Registers,
     pub ime: bool, // Interrupt Master Enable
+    pub ime_pending: bool, // EI sets this; IME is enabled after the next instruction
     pub halted: bool,
     pub stopped: bool,
 }
@@ -217,6 +218,7 @@ impl CPUState {
         CPUState {
             registers: Registers::new(),
             ime: false,
+            ime_pending: false,
             halted: false,
             stopped: false,
         }

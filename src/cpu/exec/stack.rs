@@ -100,8 +100,9 @@ pub fn exec_di(cpu_state: &mut CPUState) -> u32 {
 }
 
 /// Execute EI
+/// IME is not enabled immediately — it takes effect after the following instruction.
 pub fn exec_ei(cpu_state: &mut CPUState) -> u32 {
-    cpu_state.ime = true;
+    cpu_state.ime_pending = true;
     1
 }
 
@@ -394,7 +395,9 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.ime = false;
         assert_eq!(exec_ei(&mut cpu), 1);
-        assert!(cpu.ime);
+        // EI does not enable IME immediately; it sets ime_pending for a 1-instruction delay.
+        assert!(!cpu.ime);
+        assert!(cpu.ime_pending);
     }
 
     #[test]

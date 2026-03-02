@@ -51,6 +51,7 @@ impl CPU {
         self.state.registers.de = 0x00D8;
         self.state.registers.hl = 0x014D;
         self.state.ime = false;
+        self.state.ime_pending = false;
         self.halted = false;
         self.stopped = false;
         self.cycles = 0;
@@ -74,6 +75,15 @@ impl CPU {
             let cycles = self.service_interrupt(bus, pending);
             self.cycles += cycles as u64;
             return cycles;
+        }
+
+        // --- EI delay: promote ime_pending → ime ----------------------------------
+        // EI enables interrupts after the *following* instruction, so we promote
+        // the pending flag here (after the interrupt check) so that the NEXT call
+        // to execute() will see ime=true when it checks for pending interrupts.
+        if self.state.ime_pending {
+            self.state.ime = true;
+            self.state.ime_pending = false;
         }
 
         // --- HALT / STOP ------------------------------------------------------
@@ -1774,7 +1784,9 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::EI;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
 
-        assert!(cpu.state.ime);
+        // EI does not enable IME immediately; ime_pending is set for a 1-instruction delay.
+        assert!(!cpu.state.ime);
+        assert!(cpu.state.ime_pending);
     }
 
     #[test]
