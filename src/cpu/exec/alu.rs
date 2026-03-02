@@ -56,7 +56,7 @@ pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 
     let borrow = val as u16 + old_c as u16;
     cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
-    cpu_state.registers.f_mut().set_half_carry((a & 0xF) < ((val + old_c) & 0xF));
+    cpu_state.registers.f_mut().set_half_carry((a & 0xF) < ((val.wrapping_add(old_c)) & 0xF));
     1
 }
 
