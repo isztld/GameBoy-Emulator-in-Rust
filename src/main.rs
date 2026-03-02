@@ -9,7 +9,6 @@ pub mod memory;
 pub mod ppu;
 pub mod audio;
 pub mod timer;
-pub mod interrupt;
 pub mod input;
 pub mod system;
 pub mod config;
