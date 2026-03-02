@@ -40,8 +40,9 @@ pub fn exec_pop_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memory
 pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
     let value = r16(&cpu_state.registers, reg);
-    bus.write(sp.wrapping_sub(1), (value >> 8) as u8);       // high byte at sp-1
-    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);   // low byte at sp-2
+    // Store low byte at the lower address (sp‑2) and high byte at the higher address (sp‑1)
+    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);   // low byte at sp‑2
+    bus.write(sp.wrapping_sub(1), (value >> 8) as u8);       // high byte at sp‑1
     cpu_state.registers.sp = sp.wrapping_sub(2);
     5
 }

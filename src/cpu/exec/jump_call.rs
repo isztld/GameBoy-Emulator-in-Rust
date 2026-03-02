@@ -47,10 +47,10 @@ pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: 
     if cond_condition(cpu_state, cond) {
         let sp = cpu_state.registers.sp;
         // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
-        // Stack grows down, so we write low byte first (at sp-1), then high byte (at sp-2)
+        // Stack grows down. Write high byte first then low byte to match PUSH semantics.
         let return_pc = cpu_state.registers.pc + 3;
-        bus.write(sp.wrapping_sub(1), (return_pc & 0x00FF) as u8); // low byte
-        bus.write(sp.wrapping_sub(2), (return_pc >> 8) as u8);     // high byte
+        bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);     // high byte
+        bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8); // low byte
         cpu_state.registers.sp = sp.wrapping_sub(2);
         cpu_state.registers.pc = address;
         6
@@ -63,10 +63,10 @@ pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: 
 pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
     // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
-    // Stack grows down, so we write low byte first (at sp-1), then high byte (at sp-2)
+    // Stack grows down. Write high byte first, then low byte to match PUSH semantics.
     let return_pc = cpu_state.registers.pc + 3;
-    bus.write(sp.wrapping_sub(1), (return_pc & 0x00FF) as u8); // low byte
-    bus.write(sp.wrapping_sub(2), (return_pc >> 8) as u8);     // high byte
+    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);     // high byte
+    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8); // low byte
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = address;
     6
@@ -224,8 +224,8 @@ mod tests {
         assert_eq!(cycles, 6);
         assert_eq!(cpu.registers.pc, 0x8000);
         // Return address should be 0x1003 (PC + 3 after CALL)
-        assert_eq!(bus.read(0xFFFD), 0x03); // low byte
-        assert_eq!(bus.read(0xFFFC), 0x10); // high byte
+        assert_eq!(bus.read(0xFFFD), 0x10); // high byte
+        assert_eq!(bus.read(0xFFFC), 0x03); // low byte
         assert_eq!(cpu.registers.sp, 0xFFFC);
     }
 
