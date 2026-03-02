@@ -49,9 +49,9 @@ pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memor
 /// Execute RST n
 pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
-    let return_pc = cpu_state.registers.pc.wrapping_add(1);
-    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);       // high byte at sp-1
-    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);   // low byte at sp-2
+    let return_pc = cpu_state.registers.pc; // PC already pre-advanced by CPU::execute
+    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
+    bus.write(sp.wrapping_sub(2), (return_pc & 0xFF) as u8);
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = target as u16;
     4
@@ -238,34 +238,34 @@ mod tests {
 
     #[test]
     fn test_rst() {
-        let mut cpu = init_cpu_state();
-        cpu.registers.sp = 0xFFFE;
-        cpu.registers.pc = 0x1000;
+        let mut cpu_state = CPUState::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
+        // Simulate CPU::execute pre-advancing PC past the 1-byte RST opcode.
+        cpu_state.registers.pc = 0x1001;
+        cpu_state.registers.sp = 0xC000;
 
-        let cycles = exec_rst(&mut cpu, 0x08, &mut bus);
+        exec_rst(&mut cpu_state, 0x08, &mut bus);
 
-        assert_eq!(cycles, 4);
-        assert_eq!(cpu.registers.pc, 0x0008);
-        assert_eq!(cpu.registers.sp, 0xFFFC);
-        // Return address 0x1001: high byte at sp+1 (0xFFFD), low byte at sp (0xFFFC)
-        assert_eq!(bus.read(0xFFFD), 0x10); // high byte of 0x1001
-        assert_eq!(bus.read(0xFFFC), 0x01); // low byte of 0x1001
+        assert_eq!(cpu_state.registers.pc, 0x0008);
+        assert_eq!(cpu_state.registers.sp, 0xBFFE);
+        assert_eq!(bus.read(0xBFFF), 0x10); // return address high byte
+        assert_eq!(bus.read(0xBFFE), 0x01); // return address low byte
     }
 
     #[test]
     fn test_rst_ret_roundtrip() {
-        // RST followed by RET must land on PC+1 of the RST instruction.
-        let mut cpu = init_cpu_state();
-        cpu.registers.sp = 0xFFFE;
-        cpu.registers.pc = 0x1000;
+        let mut cpu_state = CPUState::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
+        // Pre-advanced PC: RST at 0x1000, next instruction at 0x1001.
+        cpu_state.registers.pc = 0x1001;
+        cpu_state.registers.sp = 0xC000;
 
-        exec_rst(&mut cpu, 0x08, &mut bus);
-        exec_ret(&mut cpu, &mut bus);
+        exec_rst(&mut cpu_state, 0x08, &mut bus);
+        assert_eq!(cpu_state.registers.pc, 0x0008);
 
-        assert_eq!(cpu.registers.pc, 0x1001);
-        assert_eq!(cpu.registers.sp, 0xFFFE);
+        exec_ret(&mut cpu_state, &mut bus);
+        assert_eq!(cpu_state.registers.pc, 0x1001); // back to instruction after RST
+        assert_eq!(cpu_state.registers.sp, 0xC000);
     }
 
     #[test]

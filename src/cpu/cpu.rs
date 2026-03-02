@@ -408,14 +408,12 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.sp = 0xC000;
 
-        let instruction = crate::cpu::instructions::Instruction::LdIndImm16Sp {
-            address: 0xD000,
-        };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let instruction = Instruction::LdIndImm16Sp { address: 0xD000 };
+        execute_instruction(&mut cpu.state, &mut bus, instruction);
 
-        assert_eq!(bus.read(0xD000), 0xC0); // SP high byte
-        assert_eq!(bus.read(0xD001), 0x00); // SP low byte
-        assert_eq!(cpu.state.registers.sp, 0xC000); // SP unchanged
+        assert_eq!(bus.read(0xD000), 0x00); // SP low byte at address
+        assert_eq!(bus.read(0xD001), 0xC0); // SP high byte at address + 1
+        assert_eq!(cpu.state.registers.sp, 0xC000); // SP itself unchanged
     }
 
     #[test]
@@ -1558,16 +1556,16 @@ mod tests {
     fn test_rst() {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.pc = 0x1000;
+        cpu.state.registers.pc = 0x1000; // return address (PC at time of RST execution)
         cpu.state.registers.sp = 0xC000;
 
-        let instruction = crate::cpu::instructions::Instruction::RST { target: 0x08 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let instruction = Instruction::RST { target: 0x08 };
+        execute_instruction(&mut cpu.state, &mut bus, instruction);
 
-        assert_eq!(cpu.state.registers.pc, 0x08);       // Jump to target
+        assert_eq!(cpu.state.registers.pc, 0x0008);     // jumped to target
         assert_eq!(cpu.state.registers.sp, 0xBFFE);     // SP decremented by 2
-        assert_eq!(bus.read(0xBFFF), 0x01);             // Return address low byte
-        assert_eq!(bus.read(0xBFFE), 0x10);             // Return address high byte
+        assert_eq!(bus.read(0xBFFF), 0x10);             // return address high byte
+        assert_eq!(bus.read(0xBFFE), 0x00);             // return address low byte
     }
 
     // ==================== STACK INSTRUCTIONS ====================
@@ -1673,33 +1671,56 @@ mod tests {
     }
 
     #[test]
-    fn test_add_sp_imm8_half_carry() {
+    fn test_add_sp_imm8_negative_no_carry() {
+        // SP=0xC000, offset=-1 (0xFF unsigned).
+        // Byte addition: 0x00 + 0xFF = 0xFF, no carry, no half-carry.
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.sp = 0xC000;
 
-        let instruction = crate::cpu::instructions::Instruction::AddSpImm8 {
-            value: 0x0F,
-        };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let instruction = Instruction::AddSpImm8 { value: -1i8 };
+        execute_instruction(&mut cpu.state, &mut bus, instruction);
 
-        assert_eq!(cpu.state.registers.sp, 0xC00F);
+        assert_eq!(cpu.state.registers.sp, 0xBFFF);
+        assert!(!cpu.state.registers.f().is_carry());
         assert!(!cpu.state.registers.f().is_half_carry());
+        assert!(!cpu.state.registers.f().is_zero());
+        assert!(!cpu.state.registers.f().is_subtraction());
     }
 
     #[test]
     fn test_add_sp_imm8_carry() {
+        // SP=0xC001, offset=+127 (0x7F unsigned).
+        // Byte addition: 0x01 + 0x7F = 0x80, no carry, half-carry set (0x1 + 0xF > 0xF).
+        // Use SP=0xC0FF, offset=+1: 0xFF + 0x01 = 0x100, carry set.
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.sp = 0xC000;
+        cpu.state.registers.sp = 0xC0FF;
 
-        let instruction = crate::cpu::instructions::Instruction::AddSpImm8 {
-            value: 0xFFu8 as i8, // -1
-        };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let instruction = Instruction::AddSpImm8 { value: 1i8 };
+        execute_instruction(&mut cpu.state, &mut bus, instruction);
 
-        assert_eq!(cpu.state.registers.sp, 0xBFFF);
+        assert_eq!(cpu.state.registers.sp, 0xC100);
         assert!(cpu.state.registers.f().is_carry());
+        assert!(cpu.state.registers.f().is_half_carry()); // 0xF + 0x1 > 0xF
+        assert!(!cpu.state.registers.f().is_zero());
+        assert!(!cpu.state.registers.f().is_subtraction());
+    }
+
+    #[test]
+    fn test_add_sp_imm8_half_carry_only() {
+        // SP=0xC00F, offset=+1: byte addition 0x0F + 0x01 = 0x10.
+        // Half-carry set, no carry.
+        let mut cpu = CPU::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        cpu.state.registers.sp = 0xC00F;
+
+        let instruction = Instruction::AddSpImm8 { value: 1i8 };
+        execute_instruction(&mut cpu.state, &mut bus, instruction);
+
+        assert_eq!(cpu.state.registers.sp, 0xC010);
+        assert!(!cpu.state.registers.f().is_carry());
+        assert!(cpu.state.registers.f().is_half_carry());
     }
 
     #[test]
