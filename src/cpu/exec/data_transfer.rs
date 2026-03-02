@@ -74,16 +74,35 @@ pub fn exec_ld_a_ind_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut Mem
 }
 
 /// Execute LD r8, d8
-pub fn exec_ld_r8_imm8(cpu_state: &mut CPUState, bus: &mut MemoryBus, dest: crate::cpu::instructions::R8Register, value: u8) -> u32 {
+pub fn exec_ld_r8_imm8(
+    cpu_state: &mut CPUState,
+    bus: &mut MemoryBus,
+    dest: crate::cpu::instructions::R8Register,
+    value: u8,
+) -> u32 {
     set_r8(&mut cpu_state.registers, bus, dest, value);
-    2
+    match dest {
+        crate::cpu::instructions::R8Register::HL => 3, // LD (HL), n8
+        _ => 2,
+    }
 }
 
 /// Execute LD r8, r8
-pub fn exec_ld_r8_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, dest: crate::cpu::instructions::R8Register, src: crate::cpu::instructions::R8Register) -> u32 {
+pub fn exec_ld_r8_r8(
+    cpu_state: &mut CPUState,
+    bus: &mut MemoryBus,
+    dest: crate::cpu::instructions::R8Register,
+    src: crate::cpu::instructions::R8Register,
+) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, src);
     set_r8(&mut cpu_state.registers, bus, dest, val);
-    1
+    match (dest, src) {
+        // LD (HL), r8 or LD r8, (HL) — 2 machine cycles
+        (crate::cpu::instructions::R8Register::HL, _)
+        | (_, crate::cpu::instructions::R8Register::HL) => 2,
+        // LD r8, r8 — 1 machine cycle
+        _ => 1,
+    }
 }
 
 #[cfg(test)]
@@ -91,6 +110,10 @@ mod tests {
     use super::*;
     use crate::memory::MemoryBus;
     use crate::cpu::instructions::{R8Register, R16Register, R16Mem};
+
+    fn make_bus() -> MemoryBus {
+        MemoryBus::new(vec![0u8; 32768])
+    }
 
     fn init_cpu_state() -> CPUState {
         let mut cpu = CPUState::new();
@@ -101,122 +124,105 @@ mod tests {
         cpu
     }
 
+    // -----------------------------------------------------------------------
+    // LD r16, d16
+    // -----------------------------------------------------------------------
+
     #[test]
     fn test_ld_r16_imm16() {
         let mut cpu = init_cpu_state();
-        let _bus = MemoryBus::new(vec![0; 32768]);
-
-        let cycles = exec_ld_r16_imm16(&mut cpu, R16Register::BC, 0x1234);
-
-        assert_eq!(cycles, 3);
+        assert_eq!(exec_ld_r16_imm16(&mut cpu, R16Register::BC, 0x1234), 3);
         assert_eq!(cpu.registers.bc, 0x1234);
     }
 
     #[test]
     fn test_ld_r16_imm16_all_registers() {
         let mut cpu = init_cpu_state();
-        let _bus = MemoryBus::new(vec![0; 32768]);
-
         exec_ld_r16_imm16(&mut cpu, R16Register::DE, 0x5678);
         assert_eq!(cpu.registers.de, 0x5678);
-
         exec_ld_r16_imm16(&mut cpu, R16Register::HL, 0x9ABC);
         assert_eq!(cpu.registers.hl, 0x9ABC);
-
         exec_ld_r16_imm16(&mut cpu, R16Register::SP, 0xFFFE);
         assert_eq!(cpu.registers.sp, 0xFFFE);
     }
 
+    // -----------------------------------------------------------------------
+    // LD (r16), A
+    // -----------------------------------------------------------------------
+
     #[test]
     fn test_ld_ind_r16_a_bc() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.bc = 0xC000;
         cpu.registers.set_a(0xAB);
-
-        let cycles = exec_ld_ind_r16_a(&mut cpu, R16Mem::BC, &mut bus);
-
-        assert_eq!(cycles, 2);
+        assert_eq!(exec_ld_ind_r16_a(&mut cpu, R16Mem::BC, &mut bus), 2);
         assert_eq!(bus.read(0xC000), 0xAB);
     }
 
     #[test]
     fn test_ld_ind_r16_a_de() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.de = 0xC000;
         cpu.registers.set_a(0xCD);
-
-        let cycles = exec_ld_ind_r16_a(&mut cpu, R16Mem::DE, &mut bus);
-
-        assert_eq!(cycles, 2);
+        assert_eq!(exec_ld_ind_r16_a(&mut cpu, R16Mem::DE, &mut bus), 2);
         assert_eq!(bus.read(0xC000), 0xCD);
     }
 
     #[test]
     fn test_ld_ind_r16_a_hl_plus() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         cpu.registers.set_a(0xEF);
-
-        let cycles = exec_ld_ind_r16_a(&mut cpu, R16Mem::HLPlus, &mut bus);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(bus.read(0xC000), 0xEF);
-        assert_eq!(cpu.registers.hl, 0xC001); // HL should be incremented
+        assert_eq!(exec_ld_ind_r16_a(&mut cpu, R16Mem::HLPlus, &mut bus), 2);
+        assert_eq!(bus.read(0xC000), 0xEF); // written before increment
+        assert_eq!(cpu.registers.hl, 0xC001);
     }
 
     #[test]
     fn test_ld_ind_r16_a_hl_minus() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         cpu.registers.set_a(0x12);
-
-        let cycles = exec_ld_ind_r16_a(&mut cpu, R16Mem::HLMinus, &mut bus);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(bus.read(0xBFFF), 0x12);
-        assert_eq!(cpu.registers.hl, 0xBFFF); // HL should be decremented
+        assert_eq!(exec_ld_ind_r16_a(&mut cpu, R16Mem::HLMinus, &mut bus), 2);
+        assert_eq!(bus.read(0xC000), 0x12); // written at original HL before decrement
+        assert_eq!(cpu.registers.hl, 0xBFFF);
     }
+
+    // -----------------------------------------------------------------------
+    // LD A, (r16)
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_ld_a_ind_r16_bc() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.bc = 0xC000;
         bus.write(0xC000, 0xAB);
-
-        let cycles = exec_ld_a_ind_r16(&mut cpu, R16Mem::BC, &mut bus);
-
-        assert_eq!(cycles, 2);
+        assert_eq!(exec_ld_a_ind_r16(&mut cpu, R16Mem::BC, &mut bus), 2);
         assert_eq!(cpu.registers.a(), 0xAB);
     }
 
     #[test]
     fn test_ld_a_ind_r16_de() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.de = 0xC000;
         bus.write(0xC000, 0xCD);
-
-        let cycles = exec_ld_a_ind_r16(&mut cpu, R16Mem::DE, &mut bus);
-
-        assert_eq!(cycles, 2);
+        assert_eq!(exec_ld_a_ind_r16(&mut cpu, R16Mem::DE, &mut bus), 2);
         assert_eq!(cpu.registers.a(), 0xCD);
     }
 
     #[test]
     fn test_ld_a_ind_r16_hl_plus() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         bus.write(0xC000, 0xEF);
-
-        let cycles = exec_ld_a_ind_r16(&mut cpu, R16Mem::HLPlus, &mut bus);
-
-        assert_eq!(cycles, 2);
+        assert_eq!(exec_ld_a_ind_r16(&mut cpu, R16Mem::HLPlus, &mut bus), 2);
         assert_eq!(cpu.registers.a(), 0xEF);
         assert_eq!(cpu.registers.hl, 0xC001);
     }
@@ -224,130 +230,123 @@ mod tests {
     #[test]
     fn test_ld_a_ind_r16_hl_minus() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         bus.write(0xC000, 0x12);
-
-        let cycles = exec_ld_a_ind_r16(&mut cpu, R16Mem::HLMinus, &mut bus);
-
-        assert_eq!(cycles, 2);
+        assert_eq!(exec_ld_a_ind_r16(&mut cpu, R16Mem::HLMinus, &mut bus), 2);
         assert_eq!(cpu.registers.a(), 0x12);
         assert_eq!(cpu.registers.hl, 0xBFFF);
     }
 
+    // -----------------------------------------------------------------------
+    // LD (a16), SP
+    // -----------------------------------------------------------------------
+
     #[test]
     fn test_ld_ind_imm16_sp() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 0x10000]);
-        // ensure MBC is None or disabled for tests
-        //bus.mbc = MemoryBankController::none();
+        let mut bus = make_bus();
         cpu.registers.sp = 0xABCD;
-
-        let cycles = exec_ld_ind_imm16_sp(&mut cpu, 0xC000, &mut bus);
-
-        assert_eq!(cycles, 5);
-        // Low byte first, then high byte
+        assert_eq!(exec_ld_ind_imm16_sp(&mut cpu, 0xC000, &mut bus), 5);
         assert_eq!(bus.read(0xC000), 0xCD); // low byte
         assert_eq!(bus.read(0xC001), 0xAB); // high byte
     }
 
+    // -----------------------------------------------------------------------
+    // LD (a16), A  /  LD A, (a16)
+    // -----------------------------------------------------------------------
+
     #[test]
     fn test_ld_ind_imm16_a() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.set_a(0xAB);
-
-        let cycles = exec_ld_ind_imm16_a(&mut cpu, 0xC000, &mut bus);
-
-        assert_eq!(cycles, 4);
+        assert_eq!(exec_ld_ind_imm16_a(&mut cpu, 0xC000, &mut bus), 4);
         assert_eq!(bus.read(0xC000), 0xAB);
     }
 
     #[test]
     fn test_ld_a_ind_imm16() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         bus.write(0xC000, 0xAB);
-
-        let cycles = exec_ld_a_ind_imm16(&mut cpu, 0xC000, &mut bus);
-
-        assert_eq!(cycles, 4);
+        assert_eq!(exec_ld_a_ind_imm16(&mut cpu, 0xC000, &mut bus), 4);
         assert_eq!(cpu.registers.a(), 0xAB);
     }
 
+    // -----------------------------------------------------------------------
+    // LD r8, d8
+    // -----------------------------------------------------------------------
+
     #[test]
-    fn test_ld_r8_imm8() {
+    fn test_ld_r8_imm8_register() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        let cycles = exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::B, 0xAB);
-
-        assert_eq!(cycles, 2);
+        let mut bus = make_bus();
+        assert_eq!(exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::B, 0xAB), 2);
         assert_eq!(cpu.registers.b(), 0xAB);
+    }
+
+    #[test]
+    fn test_ld_r8_imm8_hl_indirect() {
+        // LD (HL), n8 takes 3 machine cycles.
+        let mut cpu = init_cpu_state();
+        let mut bus = make_bus();
+        cpu.registers.hl = 0xC000;
+        assert_eq!(exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::HL, 0x55), 3);
+        assert_eq!(bus.read(0xC000), 0x55);
     }
 
     #[test]
     fn test_ld_r8_imm8_all_registers() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
+        let mut bus = make_bus();
         exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::C, 0xCD);
         assert_eq!(cpu.registers.c(), 0xCD);
-
         exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::D, 0xEF);
         assert_eq!(cpu.registers.d(), 0xEF);
-
         exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::E, 0x12);
         assert_eq!(cpu.registers.e(), 0x12);
-
         exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::H, 0x34);
         assert_eq!(cpu.registers.h(), 0x34);
-
         exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::L, 0x56);
         assert_eq!(cpu.registers.l(), 0x56);
-
         exec_ld_r8_imm8(&mut cpu, &mut bus, R8Register::A, 0x78);
         assert_eq!(cpu.registers.a(), 0x78);
     }
 
+    // -----------------------------------------------------------------------
+    // LD r8, r8
+    // -----------------------------------------------------------------------
+
     #[test]
-    fn test_ld_r8_r8() {
+    fn test_ld_r8_r8_register_to_register() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.set_b(0xAB);
-
-        let cycles = exec_ld_r8_r8(&mut cpu, &mut bus, R8Register::C, R8Register::B);
-
-        assert_eq!(cycles, 1);
+        assert_eq!(exec_ld_r8_r8(&mut cpu, &mut bus, R8Register::C, R8Register::B), 1);
         assert_eq!(cpu.registers.c(), 0xAB);
+        assert_eq!(cpu.registers.b(), 0xAB); // source unchanged
     }
 
     #[test]
-    fn test_ld_r8_r8_hl_memory() {
+    fn test_ld_r8_r8_from_hl_indirect() {
+        // LD r8, (HL) — 2 machine cycles
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         bus.write(0xC000, 0x42);
-        cpu.registers.set_a(0x00);
-
-        // Load from HL memory into A
-        let cycles = exec_ld_r8_r8(&mut cpu, &mut bus, R8Register::A, R8Register::HL);
-
-        assert_eq!(cycles, 1);
+        assert_eq!(exec_ld_r8_r8(&mut cpu, &mut bus, R8Register::A, R8Register::HL), 2);
         assert_eq!(cpu.registers.a(), 0x42);
     }
 
     #[test]
-    fn test_ld_r8_r8_to_hl_memory() {
+    fn test_ld_r8_r8_to_hl_indirect() {
+        // LD (HL), r8 — 2 machine cycles
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         cpu.registers.set_b(0x42);
-
-        // Load B into HL memory
-        let cycles = exec_ld_r8_r8(&mut cpu, &mut bus, R8Register::HL, R8Register::B);
-
-        assert_eq!(cycles, 1);
+        assert_eq!(exec_ld_r8_r8(&mut cpu, &mut bus, R8Register::HL, R8Register::B), 2);
         assert_eq!(bus.read(0xC000), 0x42);
     }
 }
