@@ -156,7 +156,8 @@ pub fn exec_sbc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.set_a(result);
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_carry(a < value.wrapping_add(old_c));
+    let borrow = value as u16 + old_c as u16;
+    cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
     cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (value as u32 & 0xF) + old_c as u32);
     2
 }
