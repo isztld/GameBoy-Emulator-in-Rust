@@ -1424,8 +1424,8 @@ mod tests {
 
         assert_eq!(cpu.state.registers.pc, 0x2000);    // Jumped to target
         assert_eq!(cpu.state.registers.sp, 0xBFFE);    // SP decreased by 2
-        assert_eq!(bus.read(0xBFFF), 0x03);            // Return address low byte
-        assert_eq!(bus.read(0xBFFE), 0x10);            // Return address high byte
+        assert_eq!(bus.read(0xBFFF), 0x10);            // Return address low byte
+        assert_eq!(bus.read(0xBFFE), 0x03);            // Return address high byte
     }
 
     #[test]
@@ -1444,8 +1444,8 @@ mod tests {
 
         assert_eq!(cpu.state.registers.pc, 0x2000);    // Jump taken
         assert_eq!(cpu.state.registers.sp, 0xBFFE);    // SP decreased by 2
-        assert_eq!(bus.read(0xBFFF), 0x03);            // Low byte of return address
-        assert_eq!(bus.read(0xBFFE), 0x10);            // High byte of return address
+        assert_eq!(bus.read(0xBFFF), 0x10); // High byte
+        assert_eq!(bus.read(0xBFFE), 0x03); // Low byte
     }
 
     #[test]

@@ -255,8 +255,8 @@ mod tests {
 
         assert_eq!(cycles, 6);
         assert_eq!(cpu.registers.pc, 0x8000);
-        assert_eq!(bus.read(0xFFFD), 0x03);
-        assert_eq!(bus.read(0xFFFC), 0x10);
+        assert_eq!(bus.read(0xFFFD), 0x10);
+        assert_eq!(bus.read(0xFFFC), 0x03);
         assert_eq!(cpu.registers.sp, 0xFFFC);
     }
 
