@@ -3,34 +3,46 @@
 /// The CPU is based on the SM83, a 8-bit CPU compatible with GBZ80.
 
 use crate::memory::MemoryBus;
-use crate::cpu::{CPUState};
-use crate::cpu::instructions::{Instruction};
+use crate::cpu::CPUState;
+use crate::cpu::instructions::Instruction;
 use crate::cpu::decode::decode_instruction;
 use crate::cpu::exec::execute_instruction;
 
-/// GameBoy CPU
+/// Interrupt vectors (address jumped to when servicing each interrupt).
+const INT_VBLANK:  u16 = 0x0040;
+const INT_STAT:    u16 = 0x0048;
+const INT_TIMER:   u16 = 0x0050;
+const INT_SERIAL:  u16 = 0x0058;
+const INT_JOYPAD:  u16 = 0x0060;
+
+/// Bit masks for the IE/IF registers.
+const INT_BIT_VBLANK:  u8 = 1 << 0;
+const INT_BIT_STAT:    u8 = 1 << 1;
+const INT_BIT_TIMER:   u8 = 1 << 2;
+const INT_BIT_SERIAL:  u8 = 1 << 3;
+const INT_BIT_JOYPAD:  u8 = 1 << 4;
+
 #[derive(Debug)]
 pub struct CPU {
     state: CPUState,
-    cycles: u32, // Total cycles executed
+    /// Total T-cycles executed (u64 avoids overflow at 4 MHz).
+    cycles: u64,
     halted: bool,
-    stop_halt: bool,
+    stopped: bool,
 }
 
 impl CPU {
-    /// Create a new CPU
     pub fn new() -> Self {
         let mut cpu = CPU {
             state: CPUState::new(),
             cycles: 0,
             halted: false,
-            stop_halt: false,
+            stopped: false,
         };
         cpu.reset();
         cpu
     }
 
-    /// Reset the CPU to power-on state
     pub fn reset(&mut self) {
         self.state.registers.pc = 0x0100;
         self.state.registers.sp = 0xFFFE;
@@ -40,70 +52,99 @@ impl CPU {
         self.state.registers.hl = 0x014D;
         self.state.ime = false;
         self.halted = false;
-        self.stop_halt = false;
+        self.stopped = false;
         self.cycles = 0;
     }
 
-    /// Get current CPU state
-    pub fn state(&self) -> &CPUState {
-        &self.state
-    }
+    pub fn state(&self) -> &CPUState { &self.state }
+    pub fn state_mut(&mut self) -> &mut CPUState { &mut self.state }
+    pub fn cycles(&self) -> u64 { self.cycles }
 
-    /// Get mutable CPU state
-    pub fn state_mut(&mut self) -> &mut CPUState {
-        &mut self.state
-    }
-
-    /// Get total cycles executed
-    pub fn cycles(&self) -> u32 {
-        self.cycles
-    }
-
-    /// Execute one instruction
+    /// Execute one step: service a pending interrupt OR execute one instruction.
+    /// Returns the number of machine cycles consumed (1 machine cycle = 4 T-cycles).
     pub fn execute(&mut self, bus: &mut MemoryBus) -> u32 {
-        if self.halted {
-            // While halted, only interrupt handling consumes cycles
-            // Return 1 cycle for HALT
+        // --- Interrupt check ---------------------------------------------------
+        // An interrupt can un-halt the CPU regardless of IME.
+        let pending = bus.ie & bus.read(0xFF0F) & 0x1F;
+        if pending != 0 {
+            self.halted = false; // always wake from HALT on any pending interrupt
+        }
+
+        if self.state.ime && pending != 0 {
+            let cycles = self.service_interrupt(bus, pending);
+            self.cycles += cycles as u64;
+            return cycles;
+        }
+
+        // --- HALT / STOP ------------------------------------------------------
+        if self.halted || self.stopped {
+            // Spin for 1 machine cycle, waiting for an interrupt to arrive.
             self.cycles += 1;
             return 1;
         }
 
-        // Read opcode at PC
+        // --- Normal instruction fetch / decode / execute ----------------------
         let pc = self.state.registers.pc;
         let opcode = bus.read(pc);
-
-        // Decode instruction
         let (instruction, opcode_bytes) = decode_instruction(&self.state, bus, pc, opcode);
 
-        // Execute instruction
-        let cycles = execute_instruction(&mut self.state, bus, instruction);
+        // Advance PC past this instruction before executing, so that relative
+        // jumps and calls that read PC (e.g. RST return address) see the correct
+        // "next instruction" address.  Jump/call/return instructions will
+        // overwrite PC themselves.
+        self.state.registers.pc = pc.wrapping_add(opcode_bytes as u16);
 
-        // Update cycle count
-        self.cycles += cycles as u32;
-
-        // For instructions that modify PC themselves (jumps, calls, returns, RST),
-        // we don't add opcode_bytes. The instruction's execute_instruction handles it.
-        // For other instructions, we add opcode_bytes to advance PC.
-        match instruction {
-            Instruction::JrImm8 { .. }
-            | Instruction::JrCondImm8 { .. }
-            | Instruction::JpImm16 { .. }
-            | Instruction::JpCondImm16 { .. }
-            | Instruction::JpHl
-            | Instruction::CallImm16 { .. }
-            | Instruction::CallCondImm16 { .. }
-            | Instruction::RET
-            | Instruction::RetCond { .. }
-            | Instruction::RETI
-            | Instruction::RST { .. } => {
-                // PC already set by execute_instruction, nothing to do
+        let cycles: u32 = match instruction {
+            Instruction::HALT => {
+                self.halted = true;
+                1
             }
-            _ => {
-                self.state.registers.pc += opcode_bytes as u16;
+            Instruction::STOP => {
+                self.stopped = true;
+                1
             }
-        }
+            instr => execute_instruction(&mut self.state, bus, instr),
+        };
 
-        cycles as u32
+        self.cycles += cycles as u64;
+        cycles
+    }
+
+    /// Service the highest-priority pending interrupt.
+    /// Clears the interrupt bit in IF, disables IME, and pushes PC onto the stack.
+    /// Returns the number of machine cycles consumed (5).
+    fn service_interrupt(&mut self, bus: &mut MemoryBus, pending: u8) -> u32 {
+        self.state.ime = false;
+
+        // Find the highest-priority interrupt (lowest bit number).
+        let (bit, vector) = if pending & INT_BIT_VBLANK != 0 {
+            (INT_BIT_VBLANK, INT_VBLANK)
+        } else if pending & INT_BIT_STAT != 0 {
+            (INT_BIT_STAT, INT_STAT)
+        } else if pending & INT_BIT_TIMER != 0 {
+            (INT_BIT_TIMER, INT_TIMER)
+        } else if pending & INT_BIT_SERIAL != 0 {
+            (INT_BIT_SERIAL, INT_SERIAL)
+        } else {
+            (INT_BIT_JOYPAD, INT_JOYPAD)
+        };
+
+        // Clear the IF bit for this interrupt.
+        let if_val = bus.read(0xFF0F);
+        bus.write(0xFF0F, if_val & !bit);
+
+        // Push current PC onto the stack (2 machine cycles).
+        let pc = self.state.registers.pc;
+        let sp = self.state.registers.sp;
+        bus.write(sp.wrapping_sub(1), (pc >> 8) as u8);
+        bus.write(sp.wrapping_sub(2), (pc & 0xFF) as u8);
+        self.state.registers.sp = sp.wrapping_sub(2);
+
+        // Jump to interrupt vector.
+        self.state.registers.pc = vector;
+
+        // ISR dispatch takes 5 machine cycles total.
+        5
     }
 }
 

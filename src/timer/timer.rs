@@ -1,27 +1,26 @@
 /// Timer module for GameBoy
 ///
-/// Handles the divider register (DIV), timer counter (TIMA),
-/// and timer modulo (TMA) for GameBoy timers.
+/// DIV increments at 16384 Hz (every 64 machine cycles at 1,048,576 machine cycles/sec).
+/// TIMA increments at the rate selected by TAC bits 1-0:
+///   00: 4096 Hz   → every 256 machine cycles
+///   01: 262144 Hz → every 4 machine cycles
+///   10: 65536 Hz  → every 16 machine cycles
+///   11: 16384 Hz  → every 64 machine cycles
 
-/// Timer control register
+const CPU_MACHINE_HZ: u32 = 1_048_576; // machine cycles per second (4 MHz / 4)
+
+/// Number of machine cycles between DIV increments (16384 Hz).
+const DIV_PERIOD: u32 = CPU_MACHINE_HZ / 16384; // 64
+
 #[derive(Debug, Clone, Copy)]
 pub struct TAC {
-    /// Bit 2: Timer enable (0=disable, 1=enable)
     pub enabled: bool,
-    /// Bits 1-0: Input clock select
-    /// 00: 4096 Hz
-    /// 01: 262144 Hz
-    /// 10: 65536 Hz
-    /// 11: 16384 Hz
     pub clock_select: u8,
 }
 
 impl TAC {
     pub fn new() -> Self {
-        TAC {
-            enabled: false,
-            clock_select: 0,
-        }
+        TAC { enabled: false, clock_select: 0 }
     }
 
     pub fn from_byte(value: u8) -> Self {
@@ -35,33 +34,33 @@ impl TAC {
         (if self.enabled { 0x04 } else { 0x00 }) | (self.clock_select & 0x03)
     }
 
-    /// Get the clock frequency in Hz based on clock select
-    pub fn clock_frequency(&self) -> u32 {
+    /// Machine-cycle period between TIMA increments for this clock select.
+    pub fn tima_period(&self) -> u32 {
         match self.clock_select {
-            0 => 4096,
-            1 => 262144,
-            2 => 65536,
-            3 => 16384,
-            _ => 0,
+            0 => CPU_MACHINE_HZ / 4_096,   // 256
+            1 => CPU_MACHINE_HZ / 262_144, // 4
+            2 => CPU_MACHINE_HZ / 65_536,  // 16
+            3 => CPU_MACHINE_HZ / 16_384,  // 64
+            _ => 256,
         }
     }
 }
 
 impl Default for TAC {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
-/// Timer
 #[derive(Debug)]
 pub struct Timer {
-    pub div: u8,      // Divider register (00-FF, increments at 16384 Hz)
-    pub tac: TAC,     // Timer control
-    pub tima: u8,     // Timer counter
-    pub tma: u8,      // Timer modulo
-    pub clock_counter: u32, // Internal clock counter
-    pub interrupt_pending: bool,
+    pub div: u8,
+    pub tac: TAC,
+    pub tima: u8,
+    pub tma: u8,
+
+    /// Internal counter driving DIV (resets every DIV_PERIOD machine cycles).
+    div_counter: u32,
+    /// Internal counter driving TIMA (resets every tac.tima_period() machine cycles).
+    tima_counter: u32,
 }
 
 impl Timer {
@@ -71,117 +70,221 @@ impl Timer {
             tac: TAC::new(),
             tima: 0,
             tma: 0,
-            clock_counter: 0,
-            interrupt_pending: false,
+            div_counter: 0,
+            tima_counter: 0,
         }
     }
 
-    /// Increment the divider register
-    /// Called at 16384 Hz (every 4 CPU cycles)
-    pub fn increment_div(&mut self) {
-        self.div = self.div.wrapping_add(1);
-    }
+    /// Advance the timer by one machine cycle.
+    /// Writes the timer interrupt bit (bit 2) into IF at `0xFF0F` on overflow.
+    pub fn tick(&mut self, bus: &mut crate::memory::MemoryBus) {
+        // --- DIV ---
+        self.div_counter += 1;
+        if self.div_counter >= DIV_PERIOD {
+            self.div_counter = 0;
+            self.div = self.div.wrapping_add(1);
+            // Keep the bus DIV register in sync.
+            // Write directly to the internal io array to avoid the reset-on-write behaviour.
+            bus.io[0x04] = self.div;
+        }
 
-    /// Clock the timer
-    /// Called at the rate specified by TAC
-    pub fn clock(&mut self) {
+        // --- TIMA ---
         if !self.tac.enabled {
             return;
         }
 
-        self.clock_counter += 1;
-
-        // Get the period based on clock frequency
-        let period = 1024 / self.tac.clock_frequency() as u32; // Approximate
-
-        if self.clock_counter >= period {
-            self.clock_counter = 0;
-            self.tima = self.tima.wrapping_add(1);
-
-            if self.tima == 0 {
-                // Timer overflow
+        self.tima_counter += 1;
+        if self.tima_counter >= self.tac.tima_period() {
+            self.tima_counter = 0;
+            let (new_tima, overflow) = self.tima.overflowing_add(1);
+            if overflow {
+                // Reload from TMA and request timer interrupt (IF bit 2).
                 self.tima = self.tma;
-                self.interrupt_pending = true;
+                let if_val = bus.read(0xFF0F);
+                bus.write(0xFF0F, if_val | 0x04);
+            } else {
+                self.tima = new_tima;
             }
+            // Keep bus TIMA register in sync.
+            bus.io[0x05] = self.tima;
         }
     }
 
-    /// Reset the timer
     pub fn reset(&mut self) {
         self.div = 0;
         self.tima = 0;
+        self.tma = 0;
         self.tac = TAC::new();
-        self.clock_counter = 0;
-        self.interrupt_pending = false;
+        self.div_counter = 0;
+        self.tima_counter = 0;
     }
 
-    /// Write to DIV register (reset divider)
-    pub fn write_div(&mut self, _value: u8) {
+    pub fn write_div(&mut self) {
+        // Any write to DIV resets both the register and the internal counter
+        // (the counter reset prevents a partial-period increment after the write).
         self.div = 0;
+        self.div_counter = 0;
     }
 
-    /// Write to TIMA register
-    pub fn write_tima(&mut self, value: u8) {
-        self.tima = value;
-    }
+    pub fn write_tima(&mut self, value: u8) { self.tima = value; }
+    pub fn write_tma(&mut self, value: u8)  { self.tma = value; }
 
-    /// Write to TMA register
-    pub fn write_tma(&mut self, value: u8) {
-        self.tma = value;
-    }
-
-    /// Write to TAC register
     pub fn write_tac(&mut self, value: u8) {
-        self.tac = TAC::from_byte(value);
+        // Changing clock select resets the TIMA counter to avoid a spurious
+        // early increment when switching to a faster clock.
+        let new_tac = TAC::from_byte(value);
+        if new_tac.clock_select != self.tac.clock_select {
+            self.tima_counter = 0;
+        }
+        self.tac = new_tac;
     }
 
-    /// Check if timer interrupt is pending
-    pub fn is_interrupt_pending(&self) -> bool {
-        self.interrupt_pending
-    }
-
-    /// Acknowledge timer interrupt
-    pub fn acknowledge_interrupt(&mut self) {
-        self.interrupt_pending = false;
-    }
-
-    /// Get current TIMA value
-    pub fn get_tima(&self) -> u8 {
-        self.tima
-    }
+    pub fn get_tima(&self) -> u8 { self.tima }
+    pub fn get_div(&self)  -> u8 { self.div }
 }
 
 impl Default for Timer {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::MemoryBus;
 
-    #[test]
-    fn test_tac_clock_select() {
-        let tac = TAC::from_byte(0x00);
-        assert_eq!(tac.clock_frequency(), 4096);
-
-        let tac = TAC::from_byte(0x01);
-        assert_eq!(tac.clock_frequency(), 262144);
-
-        let tac = TAC::from_byte(0x02);
-        assert_eq!(tac.clock_frequency(), 65536);
-
-        let tac = TAC::from_byte(0x03);
-        assert_eq!(tac.clock_frequency(), 16384);
+    fn make_bus() -> MemoryBus {
+        MemoryBus::new(vec![0u8; 32768])
     }
 
     #[test]
-    fn test_timer_div_increment() {
+    fn test_tac_tima_periods() {
+        assert_eq!(TAC::from_byte(0x00).tima_period(), 256);
+        assert_eq!(TAC::from_byte(0x01).tima_period(), 4);
+        assert_eq!(TAC::from_byte(0x02).tima_period(), 16);
+        assert_eq!(TAC::from_byte(0x03).tima_period(), 64);
+    }
+
+    #[test]
+    fn test_tac_enabled_flag() {
+        assert!(!TAC::from_byte(0x00).enabled);
+        assert!( TAC::from_byte(0x04).enabled);
+        assert!( TAC::from_byte(0x07).enabled);
+    }
+
+    #[test]
+    fn test_tac_roundtrip() {
+        for v in 0u8..=7 {
+            assert_eq!(TAC::from_byte(v).to_byte(), v);
+        }
+    }
+
+    #[test]
+    fn test_div_increments_every_64_cycles() {
         let mut timer = Timer::new();
-        timer.increment_div();
-        assert_eq!(timer.div, 1);
-        timer.increment_div();
+        let mut bus = make_bus();
+
+        for _ in 0..63 {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.div, 0, "DIV should not increment before 64 cycles");
+
+        timer.tick(&mut bus);
+        assert_eq!(timer.div, 1, "DIV should increment after 64 cycles");
+
+        for _ in 0..64 {
+            timer.tick(&mut bus);
+        }
         assert_eq!(timer.div, 2);
+    }
+
+    #[test]
+    fn test_div_wraps() {
+        let mut timer = Timer::new();
+        let mut bus = make_bus();
+        timer.div = 0xFF;
+        // One more full DIV_PERIOD to trigger the increment
+        for _ in 0..DIV_PERIOD {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.div, 0);
+    }
+
+    #[test]
+    fn test_write_div_resets_counter_and_register() {
+        let mut timer = Timer::new();
+        let mut bus = make_bus();
+        // Advance most of the way through a DIV period
+        for _ in 0..63 {
+            timer.tick(&mut bus);
+        }
+        timer.write_div();
+        assert_eq!(timer.div, 0);
+        assert_eq!(timer.div_counter, 0);
+        // After reset, should take another full 64 cycles before incrementing
+        for _ in 0..63 {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.div, 0, "DIV must not increment early after reset");
+        timer.tick(&mut bus);
+        assert_eq!(timer.div, 1);
+    }
+
+    #[test]
+    fn test_tima_disabled_by_default() {
+        let mut timer = Timer::new();
+        let mut bus = make_bus();
+        for _ in 0..1000 {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.tima, 0, "TIMA must not increment when timer is disabled");
+    }
+
+    #[test]
+    fn test_tima_increments_at_4096hz() {
+        // TAC = 0x04: enabled, clock select 0 (4096 Hz → period 256)
+        let mut timer = Timer::new();
+        let mut bus = make_bus();
+        timer.write_tac(0x04);
+
+        for _ in 0..255 {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.tima, 0, "TIMA must not increment before 256 cycles");
+
+        timer.tick(&mut bus);
+        assert_eq!(timer.tima, 1);
+    }
+
+    #[test]
+    fn test_tima_overflow_reloads_tma_and_sets_if() {
+        let mut timer = Timer::new();
+        let mut bus = make_bus();
+        timer.write_tac(0x04); // enabled, 4096 Hz
+        timer.write_tma(0x42);
+        timer.tima = 0xFF;
+        timer.tima_counter = 255; // one tick away from firing
+
+        timer.tick(&mut bus);
+
+        assert_eq!(timer.tima, 0x42, "TIMA must reload from TMA on overflow");
+        assert_eq!(bus.read(0xFF0F) & 0x04, 0x04, "timer interrupt bit must be set in IF");
+    }
+
+    #[test]
+    fn test_tima_fastest_clock() {
+        // TAC clock select 1: 262144 Hz → period 4
+        let mut timer = Timer::new();
+        let mut bus = make_bus();
+        timer.write_tac(0x05); // enabled, clock select 1
+
+        for _ in 0..4 {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.tima, 1);
+
+        for _ in 0..4 {
+            timer.tick(&mut bus);
+        }
+        assert_eq!(timer.tima, 2);
     }
 }
