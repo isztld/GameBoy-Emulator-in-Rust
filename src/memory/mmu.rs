@@ -175,8 +175,8 @@ impl MemoryBus {
         let offset = (address - 0xFF00) as usize;
         match offset {
             0x00 => {
-                // P1/JOYP — only bits 4-5 (select lines) are writable.
-                self.io[offset] = (self.io[offset] & 0x0F) | (value & 0x30);
+                // P1/JOYP: bits 4-5 writable (select lines); bits 6-7 preserved; bits 0-3 read-only (inputs).
+                self.io[offset] = (self.io[offset] & 0xCF) | (value & 0x30);
             }
             0x01 => {
                 // SB — serial transfer data.
@@ -202,8 +202,8 @@ impl MemoryBus {
                 self.io[offset] = value & 0x07;
             }
             0x0F => {
-                // IF — only bits 0-4 correspond to interrupt sources.
-                self.io[offset] = value & 0x1F;
+                // IF: bits 0-4 are the interrupt flags; bits 5-7 are open bus and always read 1.
+                self.io[offset] = 0xE0 | (value & 0x1F);
             }
             0x10..=0x14 | 0x16..=0x19 | 0x1A..=0x1E | 0x20..=0x26 => {
                 // Audio registers.
@@ -545,26 +545,38 @@ mod tests {
     fn test_interrupt_flag_register() {
         let mut bus = make_bus(32768);
         bus.write(0xFF0F, 0xFF);
-        assert_eq!(bus.read(0xFF0F), 0x1F); // only bits 0-4
+        // Only bits 0-4 are writable; bits 5-7 are open bus and always read 1.
+        assert_eq!(bus.read(0xFF0F), 0xFF); // 0xE0 | 0x1F = 0xFF
+    }
+
+    #[test]
+    fn test_interrupt_flag_upper_bits_always_one() {
+        let mut bus = make_bus(32768);
+        bus.write(0xFF0F, 0x00);
+        assert_eq!(bus.read(0xFF0F) & 0xE0, 0xE0, "IF bits 5-7 must always read 1");
     }
 
     #[test]
     fn test_joypad_select_bits_writable() {
         let mut bus = make_bus(32768);
 
-        // Lower nibble (button inputs) is read-only and pulled high (0x0F = all unpressed).
-        // Upper nibble bits 4-5 are the select lines and are writable.
-        // Bits 6-7 are unused and read as 1 after init (0xCF).
+        // Initial value is 0xCF: bits 6-7 set (unused/open bus), bits 4-5 set (no selection),
+        // bits 0-3 set (inputs pulled high, no buttons pressed).
 
-        // Select action buttons (bit 5 low)
+        // Select action buttons (clear bit 5, set bit 4)
         bus.write(0xFF00, 0x20);
-        assert_eq!(bus.read(0xFF00) & 0x30, 0x20); // only select bits changed
-        assert_eq!(bus.read(0xFF00) & 0x0F, 0x0F); // input lines still high
+        let p1 = bus.read(0xFF00);
+        assert_eq!(p1 & 0x30, 0x20, "select bits must reflect write");
+        assert_eq!(p1 & 0x0F, 0x0F, "input lines must remain high (unpressed)");
+        // Bits 6-7 are open bus and should be preserved from initial value.
+        assert_eq!(p1 & 0xC0, 0xC0, "bits 6-7 must be preserved");
 
-        // Select direction buttons (bit 4 low)
+        // Select direction buttons (clear bit 4, set bit 5)
         bus.write(0xFF00, 0x10);
-        assert_eq!(bus.read(0xFF00) & 0x30, 0x10);
-        assert_eq!(bus.read(0xFF00) & 0x0F, 0x0F);
+        let p1 = bus.read(0xFF00);
+        assert_eq!(p1 & 0x30, 0x10);
+        assert_eq!(p1 & 0x0F, 0x0F);
+        assert_eq!(p1 & 0xC0, 0xC0);
     }
 
     // -----------------------------------------------------------------------
@@ -591,6 +603,9 @@ mod tests {
         use std::fs::OpenOptions;
         use std::sync::{Arc, Mutex};
 
+        // Use a unique filename per test invocation to reduce (but not eliminate)
+        // races on the global static. A proper fix requires making the log file
+        // an instance field on MemoryBus.
         let temp_path = std::env::temp_dir()
             .join(format!("gb_serial_{}.txt", std::process::id()));
 
@@ -602,13 +617,12 @@ mod tests {
         MemoryBus::set_serial_log_file(Some(Arc::new(Mutex::new(file))));
 
         let mut bus = make_bus(32768);
-        // Transmit 'H', 'i' over serial
         for ch in [b'H', b'i'] {
             bus.write(0xFF01, ch);
             bus.write(0xFF02, 0x81);
         }
 
-        // Reset global so other tests are not affected
+        // Flush and close by dropping the reference before reading.
         MemoryBus::set_serial_log_file(None);
 
         let content = std::fs::read_to_string(&temp_path).expect("read temp file");
