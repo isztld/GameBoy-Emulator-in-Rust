@@ -29,6 +29,10 @@ pub struct MemoryBus {
     pub hram: [u8; 127], // 127 bytes HRAM (FF80-FFFE)
     pub oam: [u8; 160], // 160 bytes OAM (FE00-FE9F)
     pub io: [u8; 128], // I/O registers (FF00-FF7F)
+    /// When true, all reads and writes go directly to `rom` as a flat 64 KiB
+    /// array, bypassing all memory-mapped regions and the MBC.  Used by the
+    /// CPU test harness, which assumes a fully-writable 64 KiB address space.
+    pub flat_mode: bool,
     pub ie: u8, // Interrupt Enable (FFFF)
     pub mbc: MemoryBankController,
     pub cgb_mode: bool, // CGB mode enabled
@@ -121,11 +125,15 @@ impl MemoryBus {
             ie: 0x00,
             mbc,
             cgb_mode: false,
+            flat_mode: false,
         }
     }
 
     /// Read a byte from memory.
     pub fn read(&self, address: u16) -> u8 {
+        if self.flat_mode {
+            return self.rom.get(address as usize).copied().unwrap_or(0xFF);
+        }
         match address {
             // ROM bank 0 — always mapped directly.
             0x0000..=0x3FFF => {
@@ -155,6 +163,12 @@ impl MemoryBus {
 
     /// Write a byte to memory.
     pub fn write(&mut self, address: u16, value: u8) {
+        if self.flat_mode {
+            if let Some(slot) = self.rom.get_mut(address as usize) {
+                *slot = value;
+            }
+            return;
+        }
         match address {
             // ROM area — MBC intercepts control writes; ROM itself is read-only.
             0x0000..=0x7FFF => {

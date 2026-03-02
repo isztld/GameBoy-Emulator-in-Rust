@@ -56,7 +56,7 @@ pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 
     let borrow = val as u16 + old_c as u16;
     cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
-    cpu_state.registers.f_mut().set_half_carry((a & 0xF) < ((val.wrapping_add(old_c)) & 0xF));
+    cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (val as u32 & 0xF) + old_c as u32);
     1
 }
 
@@ -107,7 +107,7 @@ pub fn exec_cp_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < val);
-    cpu_state.registers.f_mut().set_half_carry((a as i8) < (val as i8));
+    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (val & 0x0F));
     1
 }
 
@@ -144,7 +144,7 @@ pub fn exec_sub_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < value);
-    cpu_state.registers.f_mut().set_half_carry((a as i8) < (value as i8));
+    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (value & 0x0F));
     2
 }
 
@@ -157,7 +157,7 @@ pub fn exec_sbc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < value.wrapping_add(old_c));
-    cpu_state.registers.f_mut().set_half_carry((a as i8) < (value.wrapping_add(old_c) as i8));
+    cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (value as u32 & 0xF) + old_c as u32);
     2
 }
 
@@ -204,7 +204,7 @@ pub fn exec_cp_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < value);
-    cpu_state.registers.f_mut().set_half_carry((a as i8) < (value as i8));
+    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (value & 0x0F));
     2
 }
 

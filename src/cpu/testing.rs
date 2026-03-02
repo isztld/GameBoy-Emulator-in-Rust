@@ -68,22 +68,15 @@ pub fn load_tests_from_dir(dir: &str) -> Vec<TestCase> {
 
 /// Run a single test case and return whether it passed
 pub fn run_test_case(test: &TestCase) -> Result<(), String> {
-    // Pre-populate ROM data so that writes to ROM-mapped addresses (0x0000–0x7FFF)
-    // are visible to reads. bus.write() in that range hits the MBC control path and
-    // never modifies self.rom, so we must seed the ROM vector directly.
-    let mut rom_data = vec![0u8; 65536];
-    for &(addr, val) in &test.initial.ram {
-        if addr < 0x8000 {
-            rom_data[addr as usize] = val;
-        }
-    }
-    let mut bus = MemoryBus::new(rom_data);
+    // The CPU tests assume a fully-writable flat 64 KiB address space.
+    // Enable flat_mode so all reads/writes go directly to the rom buffer,
+    // bypassing the real memory map and MBC.
+    let mut bus = MemoryBus::new(vec![0u8; 65536]);
+    bus.flat_mode = true;
 
-    // Write non-ROM initial values through the normal bus path.
+    // Seed initial memory state.
     for &(addr, val) in &test.initial.ram {
-        if addr >= 0x8000 {
-            bus.write(addr, val);
-        }
+        bus.write(addr, val);
     }
 
     // Create initial CPU state
