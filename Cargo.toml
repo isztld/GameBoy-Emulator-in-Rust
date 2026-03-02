@@ -3,4 +3,16 @@ name = "gb_emu"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "run_tests"
+path = "src/bin/run_tests.rs"
+
+[lib]
+name = "gb_emu"
+path = "src/lib.rs"
+
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[workspace]
