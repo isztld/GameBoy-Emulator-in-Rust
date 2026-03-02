@@ -77,7 +77,7 @@ impl MemoryBus {
         io[0x00] = 0xCF; // P1/JOYP
         io[0x04] = 0x00; // DIV
         io[0x07] = 0xF8; // TAC
-        io[0x0F] = 0xE1; // IF
+        io[0x0F] = 0xE0; // IF - bit 0 = 0 (no pending interrupts), bits 5-7 = 1 (open bus)
         io[0x10] = 0x80; // NR10
         io[0x11] = 0xBF; // NR11
         io[0x12] = 0xF3; // NR12
