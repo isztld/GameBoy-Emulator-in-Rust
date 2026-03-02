@@ -80,7 +80,7 @@ impl System {
             running: false,
             frame_complete: false,
             total_cycles: 0,
-            max_instructions: 100000, // Run for max 100000 instructions (enough for CPU test)
+            max_instructions: 2000000, // Run for max 100000 instructions (enough for CPU test)
             cpu_log_file,
             serial_log_file,
         };

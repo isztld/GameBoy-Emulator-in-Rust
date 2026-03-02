@@ -44,22 +44,24 @@ impl MemoryBus {
         *log_file = file;
     }
 
-    /// Write a character to the serial log or stdout if not configured
+    /// Write a character to the serial log or stdout if not configured.
+    /// Does NOT append a newline — callers write raw characters.
     pub fn write_serial_char(c: char) {
         let log_file = SERIAL_LOG_FILE.lock().unwrap();
         if let Some(ref file) = *log_file {
             let mut f = file.lock().unwrap();
-            f.write_all(c.to_string().as_bytes()).ok();
-            f.write_all(b"\n").ok();
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            f.write_all(s.as_bytes()).ok();
             f.flush().ok();
         }
     }
 
     pub fn new(rom_data: Vec<u8>) -> Self {
-        let mbc = MemoryBankController::new(rom_data.len());
-        // Note: MBC will have an empty ROM, the actual ROM data is stored in MemoryBus
+        // In MemoryBus::new, after rom_data is validated to be at least 0x148 bytes:
+        let header_byte = rom_data.get(0x0147).copied().unwrap_or(0x00);
+        let mbc = MemoryBankController::new(rom_data.len(), header_byte);
 
-        // Initialize I/O registers to power-on state
         let mut io = [0u8; 128];
         io[0x00] = 0xCF; // P1/JOYP
         io[0x04] = 0x00; // DIV
@@ -87,7 +89,9 @@ impl MemoryBus {
         io[0x25] = 0xF3; // NR51
         io[0x26] = 0xF1; // NR52
         io[0x40] = 0x91; // LCDC
-        io[0x41] = 0x85; // STAT
+        // STAT: bits 3-6 writable by software; start in mode 1 (VBlank) with no
+        // interrupt-select bits armed so no spurious STAT IRQ fires immediately.
+        io[0x41] = 0x01; // STAT — mode 1, no interrupt selects set
         io[0x44] = 0x00; // LY
         io[0x45] = 0x00; // LYC
         io[0x46] = 0xFF; // DMA
@@ -109,20 +113,28 @@ impl MemoryBus {
         }
     }
 
-    /// Read a byte from memory
+    /// Read a byte from memory.
     pub fn read(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => self.rom[address as usize],
-            0x4000..=0x7FFF => self.rom[address as usize],
+            // ROM bank 0 — always mapped directly.
+            0x0000..=0x3FFF => {
+                let idx = self.mbc.rom_bank0_offset() + address as usize;
+                self.rom.get(idx).copied().unwrap_or(0xFF)
+            }
+            // ROM bank 1-NN — offset determined by MBC.
+            0x4000..=0x7FFF => {
+                let bank_offset = self.mbc.rom_bank_offset(); // byte offset of the active bank
+                let idx = bank_offset + (address - 0x4000) as usize;
+                self.rom.get(idx).copied().unwrap_or(0xFF)
+            }
             0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize],
             0xA000..=0xBFFF => self.external_ram[(address - 0xA000) as usize],
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize],
-            0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize], // WRAM bank 1
-            0xE000..=0xFDFF => {
-                // Echo RAM - mirror of C000-DDFF
-                self.wram[(address - 0xE000) as usize]
-            }
+            0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize],
+            // Echo RAM mirrors C000-DDFF (not all the way to DFFF).
+            0xE000..=0xFDFF => self.wram[(address - 0xE000) as usize],
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize],
+            // Unusable region — return high nibble of low address byte, repeated.
             0xFEA0..=0xFEFF => self.read_fea0(address),
             0xFF00..=0xFF7F => self.io[(address - 0xFF00) as usize],
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize],
@@ -130,190 +142,123 @@ impl MemoryBus {
         }
     }
 
-    /// Write a byte to memory
+    /// Write a byte to memory.
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
-            0x0000..=0x3FFF => {
-                // For No MBC, write directly to ROM (allows testing)
-                // For MBC, write to MBC for control
-                if self.mbc.is_none() {
-                    let index = address as usize;
-                    if index < self.rom.len() {
-                        self.rom[index] = value;
-                    }
-                } else {
-                    self.mbc.write_rom_control(address, value);
-                }
+            // ROM area — MBC intercepts control writes; ROM itself is read-only.
+            0x0000..=0x7FFF => {
+                self.mbc.write_rom_control(address, value);
             }
-            0x4000..=0x7FFF => self.mbc.write_rom_banked(address, value),
             0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => self.external_ram[(address - 0xA000) as usize] = value,
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize] = value,
-            0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize] = value, // WRAM bank 1
-            0xE000..=0xFDFF => {
-                // Echo RAM
-                self.wram[(address - 0xE000) as usize] = value;
-            }
+            0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize] = value,
+            // Echo RAM mirrors C000-DDFF.
+            0xE000..=0xFDFF => self.wram[(address - 0xE000) as usize] = value,
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize] = value,
+            0xFEA0..=0xFEFF => {} // Unusable — writes ignored.
             0xFF00..=0xFF7F => self.write_io(address, value),
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize] = value,
             0xFFFF => self.ie = value,
-            _ => {} // Ignore writes to invalid addresses
         }
     }
 
-    /// Read from FEA0-FEFF range
+    /// Unusable region 0xFEA0–0xFEFF.
+    /// Returns the high nibble of the low address byte mirrored into both nibbles.
     fn read_fea0(&self, address: u16) -> u8 {
-        // Not usable area
-        // On DMG: returns $FF when OAM blocked, $00 otherwise
-        // On CGB: returns high nibble of lower address byte twice
-        ((address & 0x00F0) >> 4) as u8
+        let nibble = ((address & 0x00F0) >> 4) as u8;
+        nibble
     }
 
-    /// Write to I/O registers
+    /// Handle writes to I/O registers (0xFF00–0xFF7F).
     fn write_io(&mut self, address: u16, value: u8) {
         let offset = (address - 0xFF00) as usize;
         match offset {
             0x00 => {
-                // P1/JOYP - Joypad
-                // Only writes to select which buttons to read
-                self.io[offset] = value & 0xF0;
+                // P1/JOYP — only bits 4-5 (select lines) are writable.
+                self.io[offset] = (self.io[offset] & 0x0F) | (value & 0x30);
             }
             0x01 => {
-                // SB - Serial transfer data
+                // SB — serial transfer data.
                 self.io[offset] = value;
             }
             0x02 => {
-                // SC - Serial transfer control
-                // Bit 7 is transfer start (auto-cleared when transfer completes)
-                self.io[offset] = value & 0x7F; // Clear bit 7 (transfer complete)
-                // If transfer was requested (bit 7 was set), output the data
+                // SC — serial transfer control.
+                // Bit 7 = transfer start; clear it immediately (transfer is "instant" here).
+                self.io[offset] = value & 0x7F;
                 if value & 0x80 != 0 {
                     let data = self.io[0x01];
-                    // Output character to serial log file if enabled
                     MemoryBus::write_serial_char(data as char);
                 }
             }
             0x04 => {
-                // DIV - Divider register (write resets to 0)
+                // DIV — any write resets the divider to 0.
                 self.io[offset] = 0x00;
             }
-            0x05 => {
-                // TIMA - Timer counter
-                self.io[offset] = value;
-            }
-            0x06 => {
-                // TMA - Timer modulo
-                self.io[offset] = value;
-            }
+            0x05 => self.io[offset] = value, // TIMA
+            0x06 => self.io[offset] = value, // TMA
             0x07 => {
-                // TAC - Timer control
+                // TAC — only bits 0-2 are defined.
                 self.io[offset] = value & 0x07;
             }
             0x0F => {
-                // IF - Interrupt flag
+                // IF — only bits 0-4 correspond to interrupt sources.
                 self.io[offset] = value & 0x1F;
             }
-            0x10..=0x14 | 0x16..=0x19 | 0x1B..=0x1E | 0x20..=0x23 | 0x26 => {
-                // Audio registers - some are write-only
+            0x10..=0x14 | 0x16..=0x19 | 0x1A..=0x1E | 0x20..=0x26 => {
+                // Audio registers.
                 self.io[offset] = value;
             }
-            0x15 | 0x1F | 0x24 | 0x25 => {
-                // Audio registers that read back written values
+            0x30..=0x3F => {
+                // Wave RAM.
                 self.io[offset] = value;
             }
-            0x40 => {
-                // LCDC - LCD control
-                self.io[offset] = value;
-            }
+            0x40 => self.io[offset] = value, // LCDC
             0x41 => {
-                // STAT - LCD status
-                self.io[offset] = value & 0x87; // Only bits 0-2 and 6 are writable
+                // STAT — bits 3-6 are writable (interrupt-select + LYC enable).
+                // Bits 0-2 (mode / LYC flag) are read-only.
+                self.io[offset] = (self.io[offset] & 0x07) | (value & 0x78);
             }
-            0x42 => {
-                // SCY - Scroll Y
-                self.io[offset] = value;
-            }
-            0x43 => {
-                // SCX - Scroll X
-                self.io[offset] = value;
-            }
-            0x44 => {
-                // LY - LCD Y coordinate (read-only)
-                // Writing has no effect
-            }
-            0x45 => {
-                // LYC - LY compare
-                self.io[offset] = value;
-            }
-            0x46 => {
-                // DMA - OAM DMA
-                self.start_oam_dma(value);
-            }
-            0x47 | 0x48 | 0x49 => {
-                // Palettes
-                self.io[offset] = value;
-            }
-            0x4A => {
-                // WY - Window Y
-                self.io[offset] = value;
-            }
-            0x4B => {
-                // WX - Window X
-                self.io[offset] = value;
-            }
-            0x4D => {
-                // KEY1 - Speed control (CGB)
-                self.io[offset] = value;
-            }
-            0x4F => {
-                // VBK - VRAM bank select (CGB)
-                self.io[offset] = value & 0x01;
-            }
-            0x50 => {
-                // BANK - Boot ROM mapping control
-                self.io[offset] = value;
-            }
-            0x51..=0x55 => {
-                // HDMA - VRAM DMA (CGB)
-                self.io[offset] = value;
-            }
-            0x56 => {
-                // RP - Infrared port (CGB)
-                self.io[offset] = value & 0x3F;
-            }
-            0x68..=0x6B => {
-                // CGB palettes
-                self.io[offset] = value;
-            }
-            0x6C => {
-                // OPRI - Object priority (CGB)
-                self.io[offset] = value & 0x01;
-            }
-            0x70 => {
-                // SVBK - WRAM bank select (CGB)
-                self.io[offset] = value & 0x07;
-            }
-            0x76 | 0x77 => {
-                // PCM - Audio outputs (CGB, read-only)
-                // Writing has no effect
-            }
-            _ => {}
+            0x42 => self.io[offset] = value, // SCY
+            0x43 => self.io[offset] = value, // SCX
+            0x44 => {}                        // LY — read-only, writes ignored.
+            0x45 => self.io[offset] = value, // LYC
+            0x46 => self.start_oam_dma(value),
+            0x47 | 0x48 | 0x49 => self.io[offset] = value, // BGP, OBP0, OBP1
+            0x4A => self.io[offset] = value, // WY
+            0x4B => self.io[offset] = value, // WX
+            0x4D => self.io[offset] = value, // KEY1 (CGB speed switch)
+            0x4F => self.io[offset] = value & 0x01, // VBK (CGB VRAM bank)
+            0x50 => self.io[offset] = value, // Boot ROM disable
+            0x51..=0x55 => self.io[offset] = value, // HDMA (CGB)
+            0x56 => self.io[offset] = value & 0x3F, // RP (CGB IR port)
+            0x68..=0x6B => self.io[offset] = value, // CGB palettes
+            0x6C => self.io[offset] = value & 0x01, // OPRI (CGB)
+            0x70 => self.io[offset] = value & 0x07, // SVBK (CGB WRAM bank)
+            0x76 | 0x77 => {}                        // PCM12/34 — read-only.
+            _ => {}                                  // Unmapped — ignore.
         }
     }
 
-    /// Start OAM DMA transfer
-    fn start_oam_dma(&mut self, source: u8) {
-        let source_base = (source as u16) << 8;
-        // DMA transfer copies 160 bytes from source to OAM
-        for i in 0..160 {
-            let addr = source_base + i as u16;
-            let value = self.read(addr);
-            self.oam[i] = value;
+    /// Perform an OAM DMA transfer.
+    ///
+    /// Copies 160 bytes from `source_page << 8` into OAM.
+    /// The source is read through the bus so all normal address-decode rules apply.
+    /// We snapshot the relevant source bytes first to avoid borrow-checker issues
+    /// and to match hardware behaviour (DMA reads the bus before OAM is written).
+    fn start_oam_dma(&mut self, source_page: u8) {
+        self.io[0x46] = source_page;
+        let source_base = (source_page as u16) << 8;
+
+        // Collect source bytes before mutating OAM.
+        let mut buf = [0u8; 160];
+        for (i, byte) in buf.iter_mut().enumerate() {
+            *byte = self.read(source_base + i as u16);
         }
+        self.oam.copy_from_slice(&buf);
     }
 
-    /// Get ROM data
+    /// Return a reference to the full ROM slice.
     pub fn get_rom(&self) -> &[u8] {
         &self.rom
     }
@@ -322,232 +267,190 @@ impl MemoryBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
+    fn make_bus(size: usize) -> MemoryBus {
+        MemoryBus::new(vec![0u8; size])
+    }
+
+    // -----------------------------------------------------------------------
+    // Construction
+    // -----------------------------------------------------------------------
+
     #[test]
     fn test_memory_bus_create() {
-        let rom = vec![0; 32768]; // 32 KiB ROM
-        let bus = MemoryBus::new(rom);
-
-        // Check initial I/O values
-        assert_eq!(bus.io[0x00], 0xCF); // P1
-        assert_eq!(bus.io[0x40], 0x91); // LCDC
-        assert_eq!(bus.io[0x70], 0x00); // Not set yet (CGB only)
-    }
-
-    #[test]
-    fn test_read_write() {
-        let mut rom = vec![0; 32768];
-        rom[0x100] = 0x01; // Test ROM
-        let mut bus = MemoryBus::new(rom);
-
-        // Test ROM read
-        assert_eq!(bus.read(0x100), 0x01);
-
-        // Test RAM write and read
-        bus.write(0xC000, 0xAB);
-        assert_eq!(bus.read(0xC000), 0xAB);
-
-        // Test OAM
-        bus.write(0xFE00, 0x10);
-        assert_eq!(bus.read(0xFE00), 0x10);
-    }
-
-    #[test]
-    fn test_vram_read_write() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Test VRAM write and read
-        bus.write(0x8000, 0xAB);
-        assert_eq!(bus.read(0x8000), 0xAB);
-        assert_eq!(bus.vram[0], 0xAB);
-
-        bus.write(0x9FFF, 0xCD);
-        assert_eq!(bus.read(0x9FFF), 0xCD);
-        assert_eq!(bus.vram[8191], 0xCD);
-    }
-
-    #[test]
-    fn test_external_ram_read_write() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Test external RAM write and read
-        bus.write(0xA000, 0xEF);
-        assert_eq!(bus.read(0xA000), 0xEF);
-        assert_eq!(bus.external_ram[0], 0xEF);
-
-        bus.write(0xBFFF, 0x12);
-        assert_eq!(bus.read(0xBFFF), 0x12);
-        assert_eq!(bus.external_ram[8191], 0x12);
-    }
-
-    #[test]
-    fn test_wram_read_write() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Test WRAM bank 0
-        bus.write(0xC000, 0x34);
-        assert_eq!(bus.read(0xC000), 0x34);
-        assert_eq!(bus.wram[0], 0x34);
-
-        // Test WRAM bank 1 (D000-DFFF)
-        bus.write(0xD000, 0x56);
-        assert_eq!(bus.read(0xD000), 0x56);
-        assert_eq!(bus.wram[4096], 0x56);
-    }
-
-    #[test]
-    fn test_echo_ram() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Echo RAM (E000-FDFF) mirrors C000-DDFF
-        bus.write(0xC000, 0x78);
-        assert_eq!(bus.read(0xE000), 0x78); // Echo RAM should read same
-
-        bus.write(0xE000, 0x9A);
-        assert_eq!(bus.read(0xC000), 0x9A); // Writing to echo RAM also writes to original
-        assert_eq!(bus.wram[0], 0x9A);
-    }
-
-    #[test]
-    fn test_hram_read_write() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Test HRAM (FF80-FFFE)
-        bus.write(0xFF80, 0xBC);
-        assert_eq!(bus.read(0xFF80), 0xBC);
-        assert_eq!(bus.hram[0], 0xBC);
-
-        bus.write(0xFFFE, 0xDE);
-        assert_eq!(bus.read(0xFFFE), 0xDE);
-        assert_eq!(bus.hram[126], 0xDE);
-    }
-
-    #[test]
-    fn test_ie_register() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Test IE register at FFFF
-        bus.write(0xFFFF, 0x3F);
-        assert_eq!(bus.read(0xFFFF), 0x3F);
-        assert_eq!(bus.ie, 0x3F);
-
-        bus.write(0xFFFF, 0x00);
-        assert_eq!(bus.read(0xFFFF), 0x00);
+        let bus = make_bus(32768);
+        assert_eq!(bus.read(0xFF00), 0xCF); // P1
+        assert_eq!(bus.read(0xFF40), 0x91); // LCDC
+        assert_eq!(bus.read(0xFF70), 0x00); // SVBK (CGB only, starts 0)
     }
 
     #[test]
     fn test_io_registers_initial_state() {
-        let bus = MemoryBus::new(vec![0; 32768]);
+        let bus = make_bus(32768);
 
-        assert_eq!(bus.io[0x00], 0xCF); // P1/JOYP
-        assert_eq!(bus.io[0x04], 0x00); // DIV
-        assert_eq!(bus.io[0x07], 0xF8); // TAC
-        assert_eq!(bus.io[0x0F], 0xE1); // IF
-        assert_eq!(bus.io[0x10], 0x80); // NR10
-        assert_eq!(bus.io[0x11], 0xBF); // NR11
-        assert_eq!(bus.io[0x12], 0xF3); // NR12
-        assert_eq!(bus.io[0x13], 0xFF); // NR13
-        assert_eq!(bus.io[0x14], 0xBF); // NR14
-        assert_eq!(bus.io[0x16], 0x3F); // NR21
-        assert_eq!(bus.io[0x17], 0x00); // NR22
-        assert_eq!(bus.io[0x18], 0xFF); // NR23
-        assert_eq!(bus.io[0x19], 0xBF); // NR24
-        assert_eq!(bus.io[0x1A], 0x7F); // NR30
-        assert_eq!(bus.io[0x1B], 0xFF); // NR31
-        assert_eq!(bus.io[0x1C], 0x9F); // NR32
-        assert_eq!(bus.io[0x1D], 0xFF); // NR33
-        assert_eq!(bus.io[0x1E], 0xBF); // NR34
-        assert_eq!(bus.io[0x20], 0xFF); // NR41
-        assert_eq!(bus.io[0x21], 0x00); // NR42
-        assert_eq!(bus.io[0x22], 0x00); // NR43
-        assert_eq!(bus.io[0x23], 0xBF); // NR44
-        assert_eq!(bus.io[0x24], 0x77); // NR50
-        assert_eq!(bus.io[0x25], 0xF3); // NR51
-        assert_eq!(bus.io[0x26], 0xF1); // NR52
-        assert_eq!(bus.io[0x40], 0x91); // LCDC
-        assert_eq!(bus.io[0x41], 0x85); // STAT
-        assert_eq!(bus.io[0x44], 0x00); // LY
-        assert_eq!(bus.io[0x45], 0x00); // LYC
-        assert_eq!(bus.io[0x46], 0xFF); // DMA
-        assert_eq!(bus.io[0x47], 0xFC); // BGP
-        assert_eq!(bus.io[0x4A], 0x00); // WY
-        assert_eq!(bus.io[0x4B], 0x00); // WX
+        assert_eq!(bus.read(0xFF00), 0xCF); // P1/JOYP
+        assert_eq!(bus.read(0xFF04), 0x00); // DIV
+        assert_eq!(bus.read(0xFF07), 0xF8); // TAC
+        assert_eq!(bus.read(0xFF0F), 0xE1); // IF
+        assert_eq!(bus.read(0xFF10), 0x80); // NR10
+        assert_eq!(bus.read(0xFF11), 0xBF); // NR11
+        assert_eq!(bus.read(0xFF12), 0xF3); // NR12
+        assert_eq!(bus.read(0xFF13), 0xFF); // NR13
+        assert_eq!(bus.read(0xFF14), 0xBF); // NR14
+        assert_eq!(bus.read(0xFF16), 0x3F); // NR21
+        assert_eq!(bus.read(0xFF17), 0x00); // NR22
+        assert_eq!(bus.read(0xFF18), 0xFF); // NR23
+        assert_eq!(bus.read(0xFF19), 0xBF); // NR24
+        assert_eq!(bus.read(0xFF1A), 0x7F); // NR30
+        assert_eq!(bus.read(0xFF1B), 0xFF); // NR31
+        assert_eq!(bus.read(0xFF1C), 0x9F); // NR32
+        assert_eq!(bus.read(0xFF1D), 0xFF); // NR33
+        assert_eq!(bus.read(0xFF1E), 0xBF); // NR34
+        assert_eq!(bus.read(0xFF20), 0xFF); // NR41
+        assert_eq!(bus.read(0xFF21), 0x00); // NR42
+        assert_eq!(bus.read(0xFF22), 0x00); // NR43
+        assert_eq!(bus.read(0xFF23), 0xBF); // NR44
+        assert_eq!(bus.read(0xFF24), 0x77); // NR50
+        assert_eq!(bus.read(0xFF25), 0xF3); // NR51
+        assert_eq!(bus.read(0xFF26), 0xF1); // NR52
+        assert_eq!(bus.read(0xFF40), 0x91); // LCDC
+        // STAT initial value: mode 1, no interrupt selects armed
+        assert_eq!(bus.read(0xFF41), 0x01); // STAT
+        assert_eq!(bus.read(0xFF44), 0x00); // LY
+        assert_eq!(bus.read(0xFF45), 0x00); // LYC
+        assert_eq!(bus.read(0xFF46), 0xFF); // DMA
+        assert_eq!(bus.read(0xFF47), 0xFC); // BGP
+        assert_eq!(bus.read(0xFF4A), 0x00); // WY
+        assert_eq!(bus.read(0xFF4B), 0x00); // WX
+    }
+
+    // -----------------------------------------------------------------------
+    // ROM
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_rom_bank0_read() {
+        let mut rom = vec![0u8; 32768];
+        rom[0x0100] = 0xAB;
+        rom[0x3FFF] = 0xCD;
+        let bus = MemoryBus::new(rom);
+        assert_eq!(bus.read(0x0100), 0xAB);
+        assert_eq!(bus.read(0x3FFF), 0xCD);
     }
 
     #[test]
-    fn test_io_register_write() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Write to LCDC
-        bus.write(0xFF40, 0x91);
-        assert_eq!(bus.io[0x40], 0x91);
-
-        // Write to SCY
-        bus.write(0xFF42, 0x10);
-        assert_eq!(bus.io[0x42], 0x10);
-
-        // Write to SCX
-        bus.write(0xFF43, 0x20);
-        assert_eq!(bus.io[0x43], 0x20);
-
-        // Write to LYC
-        bus.write(0xFF45, 0x30);
-        assert_eq!(bus.io[0x45], 0x30);
-    }
-
-    #[test]
-    fn test_io_register_read_only() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // LY is read-only
-        let initial_ly = bus.io[0x44];
-        bus.write(0xFF44, 0xFF); // Should have no effect
-        assert_eq!(bus.read(0xFF44), initial_ly);
-    }
-
-    #[test]
-    fn test_oam_dma() {
-        // Use 64KB ROM to support source address in ROM range
-        let mut rom = vec![0; 65536];
-        // Set up source data for OAM DMA at address 0x8000 (VRAM, but we can use ROM range)
-        // Use 0x1000 which is in ROM range (0x0000-0x7FFF)
-        rom[0x1000] = 0x01; // Sprite Y
-        rom[0x1001] = 0x10; // Sprite X
-        rom[0x1002] = 0x02; // Tile
-        rom[0x1003] = 0x03; // Attributes
-        for i in 4..160 {
-            rom[0x1000 + i] = (i as u8) & 0xFF;
-        }
-
+    fn test_rom_is_read_only() {
+        let mut rom = vec![0u8; 32768];
+        rom[0x0100] = 0x42;
         let mut bus = MemoryBus::new(rom);
-
-        // Start OAM DMA from $10 (upper byte of 0x1000)
-        bus.write(0xFF46, 0x10);
-
-        // Check OAM was loaded
-        assert_eq!(bus.oam[0], 0x01);
-        assert_eq!(bus.oam[1], 0x10);
-        assert_eq!(bus.oam[2], 0x02);
-        assert_eq!(bus.oam[3], 0x03);
+        bus.write(0x0100, 0xFF); // must be ignored
+        assert_eq!(bus.read(0x0100), 0x42);
     }
+
+    #[test]
+    fn test_get_rom() {
+        let rom_data = vec![0x11u8, 0x22, 0x33, 0x44];
+        let bus = MemoryBus::new(rom_data.clone());
+        assert_eq!(bus.get_rom(), rom_data.as_slice());
+    }
+
+    // -----------------------------------------------------------------------
+    // VRAM
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_vram_read_write() {
+        let mut bus = make_bus(32768);
+        bus.write(0x8000, 0xAB);
+        assert_eq!(bus.read(0x8000), 0xAB);
+        bus.write(0x9FFF, 0xCD);
+        assert_eq!(bus.read(0x9FFF), 0xCD);
+    }
+
+    // -----------------------------------------------------------------------
+    // External RAM
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_external_ram_read_write() {
+        let mut bus = make_bus(32768);
+        bus.write(0xA000, 0xEF);
+        assert_eq!(bus.read(0xA000), 0xEF);
+        bus.write(0xBFFF, 0x12);
+        assert_eq!(bus.read(0xBFFF), 0x12);
+    }
+
+    // -----------------------------------------------------------------------
+    // WRAM
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_wram_read_write() {
+        let mut bus = make_bus(32768);
+        bus.write(0xC000, 0x34);
+        assert_eq!(bus.read(0xC000), 0x34);
+        bus.write(0xD000, 0x56);
+        assert_eq!(bus.read(0xD000), 0x56);
+    }
+
+    #[test]
+    fn test_echo_ram_mirrors_wram() {
+        let mut bus = make_bus(32768);
+
+        // Write to WRAM, read back through echo window
+        bus.write(0xC000, 0x78);
+        assert_eq!(bus.read(0xE000), 0x78);
+
+        // Write through echo window, read back from WRAM
+        bus.write(0xE001, 0x9A);
+        assert_eq!(bus.read(0xC001), 0x9A);
+    }
+
+    #[test]
+    fn test_echo_ram_upper_boundary() {
+        // 0xFDFF is the last echo address; maps to WRAM offset 0x1DFF
+        let mut bus = make_bus(32768);
+        bus.write(0xFDFF, 0x55);
+        assert_eq!(bus.read(0xFDFF), 0x55);
+        assert_eq!(bus.read(0xDDFF), 0x55);
+    }
+
+    // -----------------------------------------------------------------------
+    // OAM
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_oam_read_write() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Write to OAM
-        bus.write(0xFE00, 0x50); // Y position
+        let mut bus = make_bus(32768);
+        bus.write(0xFE00, 0x50);
         assert_eq!(bus.read(0xFE00), 0x50);
-
-        bus.write(0xFE9F, 0x9F); // Last OAM entry
+        bus.write(0xFE9F, 0x9F);
         assert_eq!(bus.read(0xFE9F), 0x9F);
     }
 
     #[test]
-    fn test_fea0_feff_range() {
-        let bus = MemoryBus::new(vec![0; 32768]);
+    fn test_oam_dma() {
+        // 32 KiB ROM with header byte 0x00 (no MBC); source at 0x1000 (bank 0)
+        let mut rom = vec![0u8; 32768];
+        for i in 0..160usize {
+            rom[0x1000 + i] = i as u8;
+        }
+        let mut bus = MemoryBus::new(rom);
 
-        // FEA0-FEFF returns high nibble of lower address byte
+        bus.write(0xFF46, 0x10); // DMA from 0x1000
+
+        for i in 0..160usize {
+            assert_eq!(bus.oam[i], i as u8, "OAM[{i}] mismatch");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Unusable region
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_fea0_feff_read() {
+        let bus = make_bus(32768);
         assert_eq!(bus.read(0xFEA0), 0x0A);
         assert_eq!(bus.read(0xFEB0), 0x0B);
         assert_eq!(bus.read(0xFEC0), 0x0C);
@@ -557,177 +460,169 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_map_boundaries() {
-        let bus = MemoryBus::new(vec![0; 32768]);
+    fn test_fea0_feff_write_ignored() {
+        let mut bus = make_bus(32768);
+        let before = bus.read(0xFEA0);
+        bus.write(0xFEA0, 0xFF);
+        assert_eq!(bus.read(0xFEA0), before);
+    }
 
-        // ROM Bank 0
-        assert_eq!(bus.read(0x0000), 0x00);
-        assert_eq!(bus.read(0x3FFF), 0x00);
+    // -----------------------------------------------------------------------
+    // HRAM
+    // -----------------------------------------------------------------------
 
-        // ROM Bank 1 (same for now since no MBC)
-        assert_eq!(bus.read(0x4000), 0x00);
-        assert_eq!(bus.read(0x7FFF), 0x00);
+    #[test]
+    fn test_hram_read_write() {
+        let mut bus = make_bus(32768);
+        bus.write(0xFF80, 0xBC);
+        assert_eq!(bus.read(0xFF80), 0xBC);
+        bus.write(0xFFFE, 0xDE);
+        assert_eq!(bus.read(0xFFFE), 0xDE);
+    }
 
-        // VRAM boundary
-        assert_eq!(bus.read(0x8000), 0x00);
-        assert_eq!(bus.read(0x9FFF), 0x00);
+    // -----------------------------------------------------------------------
+    // IE register
+    // -----------------------------------------------------------------------
 
-        // External RAM
-        assert_eq!(bus.read(0xA000), 0x00);
-        assert_eq!(bus.read(0xBFFF), 0x00);
-
-        // WRAM
-        assert_eq!(bus.read(0xC000), 0x00);
-        assert_eq!(bus.read(0xCFFF), 0x00);
-        assert_eq!(bus.read(0xD000), 0x00);
-        assert_eq!(bus.read(0xDFFF), 0x00);
-
-        // Echo RAM
-        assert_eq!(bus.read(0xE000), 0x00);
-        assert_eq!(bus.read(0xFDFF), 0x00);
-
-        // OAM
-        assert_eq!(bus.read(0xFE00), 0x00);
-        assert_eq!(bus.read(0xFE9F), 0x00);
-
-        // I/O
-        assert_eq!(bus.read(0xFF00), 0xCF);
-        assert_eq!(bus.read(0xFF7F), 0x00);
-
-        // HRAM
-        assert_eq!(bus.read(0xFF80), 0x00);
-        assert_eq!(bus.read(0xFFFE), 0x00);
-
-        // IE
+    #[test]
+    fn test_ie_register() {
+        let mut bus = make_bus(32768);
+        bus.write(0xFFFF, 0x1F);
+        assert_eq!(bus.read(0xFFFF), 0x1F);
+        bus.write(0xFFFF, 0x00);
         assert_eq!(bus.read(0xFFFF), 0x00);
     }
 
-    #[test]
-    fn test_memory_overflow_ignores() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+    // -----------------------------------------------------------------------
+    // I/O register behaviour
+    // -----------------------------------------------------------------------
 
-        // Writes to invalid addresses should be ignored
-        // Using wrapping_sub and wrapping_add to avoid compile-time overflow
-        bus.write(0u16.wrapping_sub(1), 0xFF); // Should not panic (wraps to 0xFFFF)
-        bus.write(0xFFFFu16.wrapping_add(1), 0xFF); // Should not panic (wraps to 0x0000)
+    #[test]
+    fn test_lcdc_scx_scy_lyc_writable() {
+        let mut bus = make_bus(32768);
+        bus.write(0xFF40, 0x80); assert_eq!(bus.read(0xFF40), 0x80); // LCDC
+        bus.write(0xFF42, 0x10); assert_eq!(bus.read(0xFF42), 0x10); // SCY
+        bus.write(0xFF43, 0x20); assert_eq!(bus.read(0xFF43), 0x20); // SCX
+        bus.write(0xFF45, 0x30); assert_eq!(bus.read(0xFF45), 0x30); // LYC
     }
 
     #[test]
-    fn test_serial_io() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // SB (serial data)
-        bus.write(0xFF01, 0x48); // 'H'
-        assert_eq!(bus.read(0xFF01), 0x48);
-
-        // SC (serial control)
-        bus.write(0xFF02, 0x80); // Start transfer
-        assert_eq!(bus.read(0xFF02) & 0x7F, 0x00); // Bit 7 should be cleared
+    fn test_ly_is_read_only() {
+        let mut bus = make_bus(32768);
+        let before = bus.read(0xFF44);
+        bus.write(0xFF44, 0xFF);
+        assert_eq!(bus.read(0xFF44), before);
     }
 
     #[test]
-    fn test_divider_register() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+    fn test_stat_writable_bits() {
+        let mut bus = make_bus(32768);
+        // Bits 3-6 are writable; bits 0-2 (mode/LYC flag) are read-only.
+        // Start with mode bits = 0x01 (from init), write 0xFF, expect
+        // read-only bits preserved and writable bits updated.
+        bus.write(0xFF41, 0xFF);
+        let stat = bus.read(0xFF41);
+        assert_eq!(stat & 0x07, 0x01, "mode bits must be read-only");
+        assert_eq!(stat & 0x78, 0x78, "interrupt-select bits must be writable");
+    }
 
-        // DIV register resets to 0 on write
+    #[test]
+    fn test_divider_resets_on_write() {
+        let mut bus = make_bus(32768);
         bus.write(0xFF04, 0xFF);
         assert_eq!(bus.read(0xFF04), 0x00);
     }
 
     #[test]
     fn test_timer_registers() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // TIMA
-        bus.write(0xFF05, 0x42);
-        assert_eq!(bus.read(0xFF05), 0x42);
-
-        // TMA
-        bus.write(0xFF06, 0x24);
-        assert_eq!(bus.read(0xFF06), 0x24);
-
-        // TAC - only lower 3 bits writable
-        bus.write(0xFF07, 0xFF);
-        assert_eq!(bus.read(0xFF07), 0x07); // Only bits 0-2 preserved
+        let mut bus = make_bus(32768);
+        bus.write(0xFF05, 0x42); assert_eq!(bus.read(0xFF05), 0x42); // TIMA
+        bus.write(0xFF06, 0x24); assert_eq!(bus.read(0xFF06), 0x24); // TMA
+        bus.write(0xFF07, 0xFF); assert_eq!(bus.read(0xFF07), 0x07); // TAC: only bits 0-2
     }
 
     #[test]
     fn test_interrupt_flag_register() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // IF register - only bits 0-4 writable
+        let mut bus = make_bus(32768);
         bus.write(0xFF0F, 0xFF);
-        assert_eq!(bus.read(0xFF0F), 0x1F); // Only bits 0-4 preserved
+        assert_eq!(bus.read(0xFF0F), 0x1F); // only bits 0-4
     }
 
     #[test]
-    fn test_joypad_register() {
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+    fn test_joypad_select_bits_writable() {
+        let mut bus = make_bus(32768);
 
-        // P1 register - only upper bits writable
-        bus.write(0xFF00, 0xF0);
-        assert_eq!(bus.read(0xFF00), 0xF0);
+        // Lower nibble (button inputs) is read-only and pulled high (0x0F = all unpressed).
+        // Upper nibble bits 4-5 are the select lines and are writable.
+        // Bits 6-7 are unused and read as 1 after init (0xCF).
 
-        bus.write(0xFF00, 0x0F);
-        // Lower bits are always 0 on write (only upper 4 bits are writable)
-        assert_eq!(bus.io[0x00] & 0x0F, 0x00);
+        // Select action buttons (bit 5 low)
+        bus.write(0xFF00, 0x20);
+        assert_eq!(bus.read(0xFF00) & 0x30, 0x20); // only select bits changed
+        assert_eq!(bus.read(0xFF00) & 0x0F, 0x0F); // input lines still high
+
+        // Select direction buttons (bit 4 low)
+        bus.write(0xFF00, 0x10);
+        assert_eq!(bus.read(0xFF00) & 0x30, 0x10);
+        assert_eq!(bus.read(0xFF00) & 0x0F, 0x0F);
+    }
+
+    // -----------------------------------------------------------------------
+    // Serial
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_serial_sb_readable() {
+        let mut bus = make_bus(32768);
+        bus.write(0xFF01, 0x48);
+        assert_eq!(bus.read(0xFF01), 0x48);
     }
 
     #[test]
-    fn test_get_rom() {
-        let rom_data = vec![0x11, 0x22, 0x33, 0x44];
-        let bus = MemoryBus::new(rom_data.clone());
-
-        assert_eq!(bus.get_rom(), rom_data.as_slice());
+    fn test_serial_sc_clears_bit7_after_transfer() {
+        let mut bus = make_bus(32768);
+        bus.write(0xFF01, 0x41);
+        bus.write(0xFF02, 0x81); // start transfer, internal clock
+        assert_eq!(bus.read(0xFF02) & 0x80, 0x00);
     }
 
     #[test]
-    fn test_cgb_mode_flag() {
-        let bus = MemoryBus::new(vec![0; 32768]);
-        assert!(!bus.cgb_mode);
-
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-        bus.cgb_mode = true;
-        assert!(bus.cgb_mode);
-    }
-
-    #[test]
-    fn test_serial_output() {
+    fn test_serial_output_to_file() {
         use std::fs::OpenOptions;
+        use std::sync::{Arc, Mutex};
 
-        // Create a temp file for serial output
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("gb_serial_test_{}.txt", std::process::id()));
+        let temp_path = std::env::temp_dir()
+            .join(format!("gb_serial_{}.txt", std::process::id()));
 
-        // Create bus and set up serial log
-        let mut bus = MemoryBus::new(vec![0; 32768]);
-
-        // Set the serial log file
         let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
+            .write(true).create(true).truncate(true)
             .open(&temp_path)
-            .expect("Failed to open temp file");
-        MemoryBus::set_serial_log_file(Some(std::sync::Arc::new(std::sync::Mutex::new(file))));
+            .expect("open temp file");
 
-        // Write data to SB register
-        bus.write(0xFF01, 0x41); // 'A'
+        MemoryBus::set_serial_log_file(Some(Arc::new(Mutex::new(file))));
 
-        // Write to SC register with bit 7 set (start transfer)
-        bus.write(0xFF02, 0x80);
+        let mut bus = make_bus(32768);
+        // Transmit 'H', 'i' over serial
+        for ch in [b'H', b'i'] {
+            bus.write(0xFF01, ch);
+            bus.write(0xFF02, 0x81);
+        }
 
-        // Give the thread time to write
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Reset global so other tests are not affected
+        MemoryBus::set_serial_log_file(None);
 
-        // Read the file
-        let content = std::fs::read_to_string(&temp_path)
-            .expect("Failed to read temp file");
-
-        // Verify 'A' was written
-        assert!(content.contains('A'), "Serial log should contain 'A', got: {}", content);
-
-        // Cleanup
+        let content = std::fs::read_to_string(&temp_path).expect("read temp file");
         let _ = std::fs::remove_file(&temp_path);
+
+        assert_eq!(content, "Hi");
+    }
+
+    // -----------------------------------------------------------------------
+    // CGB flag
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_cgb_mode_defaults_false() {
+        assert!(!make_bus(32768).cgb_mode);
     }
 }

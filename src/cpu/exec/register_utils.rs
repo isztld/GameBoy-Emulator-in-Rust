@@ -55,3 +55,134 @@ pub fn set_r8(registers: &mut Registers, bus: &mut MemoryBus, reg: R8Register, v
         R8Register::A => registers.set_a(value),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::MemoryBus;
+
+    #[test]
+    fn test_r16_get() {
+        let mut registers = Registers::new();
+        registers.bc = 0x1234;
+        registers.de = 0x5678;
+        registers.hl = 0x9ABC;
+        registers.sp = 0xFFFE;
+        registers.af = 0x1234;
+
+        assert_eq!(r16(&registers, R16Register::BC), 0x1234);
+        assert_eq!(r16(&registers, R16Register::DE), 0x5678);
+        assert_eq!(r16(&registers, R16Register::HL), 0x9ABC);
+        assert_eq!(r16(&registers, R16Register::SP), 0xFFFE);
+        assert_eq!(r16(&registers, R16Register::AF), 0x1234);
+    }
+
+    #[test]
+    fn test_set_r16() {
+        let mut registers = Registers::new();
+
+        set_r16(&mut registers, R16Register::BC, 0x1234);
+        assert_eq!(registers.bc, 0x1234);
+
+        set_r16(&mut registers, R16Register::DE, 0x5678);
+        assert_eq!(registers.de, 0x5678);
+
+        set_r16(&mut registers, R16Register::HL, 0x9ABC);
+        assert_eq!(registers.hl, 0x9ABC);
+
+        set_r16(&mut registers, R16Register::SP, 0xFF00);
+        assert_eq!(registers.sp, 0xFF00);
+
+        // AF register should have lower 4 bits of F cleared
+        set_r16(&mut registers, R16Register::AF, 0xABCD);
+        assert_eq!(registers.af, 0xABC0);
+    }
+
+    #[test]
+    fn test_set_r16_af_preserves_high_nibble() {
+        let mut registers = Registers::new();
+
+        // Set F with various flag bits
+        registers.set_a(0xFF);
+        registers.f_mut().set_zero(true);
+        registers.f_mut().set_carry(true);
+
+        let af = registers.af;
+        set_r16(&mut registers, R16Register::AF, 0x1234);
+
+        // Should preserve high nibble of F (the flags)
+        assert_eq!(registers.af & 0xF0, af & 0xF0);
+    }
+
+    #[test]
+    fn test_get_r8_normal_registers() {
+        let mut registers = Registers::new();
+        registers.set_b(0xAB);
+        registers.set_c(0xCD);
+        registers.set_d(0xEF);
+        registers.set_e(0x12);
+        registers.set_h(0x34);
+        registers.set_l(0x56);
+        registers.set_a(0x78);
+
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::B), 0xAB);
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::C), 0xCD);
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::D), 0xEF);
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::E), 0x12);
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::H), 0x34);
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::L), 0x56);
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::A), 0x78);
+    }
+
+    #[test]
+    fn test_get_r8_hl_memory() {
+        let mut registers = Registers::new();
+        registers.hl = 0xC000;
+
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xC000, 0x42);
+
+        assert_eq!(get_r8(&registers, &mut bus, R8Register::HL), 0x42);
+    }
+
+    #[test]
+    fn test_set_r8_normal_registers() {
+        let mut registers = Registers::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        set_r8(&mut registers, &mut bus, R8Register::B, 0xAB);
+        assert_eq!(registers.b(), 0xAB);
+
+        set_r8(&mut registers, &mut bus, R8Register::C, 0xCD);
+        assert_eq!(registers.c(), 0xCD);
+
+        set_r8(&mut registers, &mut bus, R8Register::D, 0xEF);
+        assert_eq!(registers.d(), 0xEF);
+
+        set_r8(&mut registers, &mut bus, R8Register::E, 0x12);
+        assert_eq!(registers.e(), 0x12);
+
+        set_r8(&mut registers, &mut bus, R8Register::H, 0x34);
+        assert_eq!(registers.h(), 0x34);
+
+        set_r8(&mut registers, &mut bus, R8Register::L, 0x56);
+        assert_eq!(registers.l(), 0x56);
+
+        set_r8(&mut registers, &mut bus, R8Register::A, 0x78);
+        assert_eq!(registers.a(), 0x78);
+    }
+
+    #[test]
+    fn test_set_r8_hl_memory() {
+        let mut registers = Registers::new();
+        registers.hl = 0xC000;
+
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        set_r8(&mut registers, &mut bus, R8Register::HL, 0x42);
+
+        assert_eq!(bus.read(0xC000), 0x42);
+    }
+}

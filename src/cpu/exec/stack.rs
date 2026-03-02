@@ -128,3 +128,272 @@ pub fn exec_ldh_a_ind_imm8(cpu_state: &mut CPUState, address: u8, bus: &mut Memo
     cpu_state.registers.set_a(bus.read(0xFF00u16.wrapping_add(address as u16)));
     3
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::MemoryBus;
+    use crate::cpu::instructions::R16Register;
+
+    fn init_cpu_state() -> CPUState {
+        let mut cpu = CPUState::new();
+        cpu.registers.f_mut().set_zero(false);
+        cpu.registers.f_mut().set_subtraction(false);
+        cpu.registers.f_mut().set_half_carry(false);
+        cpu.registers.f_mut().set_carry(false);
+        cpu.ime = false;
+        cpu
+    }
+
+    #[test]
+    fn test_ret() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFC;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xFFFC, 0x00); // low byte
+        bus.write(0xFFFD, 0x80); // high byte
+
+        let cycles = exec_ret(&mut cpu, &mut bus);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.pc, 0x8000);
+        assert_eq!(cpu.registers.sp, 0xFFFE);
+    }
+
+    #[test]
+    fn test_reti() {
+        let mut cpu = init_cpu_state();
+        cpu.ime = false;
+        cpu.registers.sp = 0xFFFC;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xFFFC, 0x00); // low byte
+        bus.write(0xFFFD, 0x80); // high byte
+
+        let cycles = exec_reti(&mut cpu, &mut bus);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.pc, 0x8000);
+        assert_eq!(cpu.registers.sp, 0xFFFE);
+        assert!(cpu.ime);
+    }
+
+    #[test]
+    fn test_pop_r16() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFC;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xFFFC, 0x34); // low byte
+        bus.write(0xFFFD, 0x12); // high byte
+
+        let cycles = exec_pop_r16(&mut cpu, R16Register::BC, &mut bus);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.registers.bc, 0x1234);
+        assert_eq!(cpu.registers.sp, 0xFFFE);
+    }
+
+    #[test]
+    fn test_pop_r16_af() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFC;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xFFFC, 0x34); // low byte
+        bus.write(0xFFFD, 0x12); // high byte
+
+        let cycles = exec_pop_r16(&mut cpu, R16Register::AF, &mut bus);
+
+        assert_eq!(cycles, 3);
+        // AF should have lower 4 bits of F cleared
+        assert_eq!(cpu.registers.af, 0x1230);
+    }
+
+    #[test]
+    fn test_push_r16() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFE;
+        cpu.registers.bc = 0x1234;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        let cycles = exec_push_r16(&mut cpu, R16Register::BC, &mut bus);
+
+        assert_eq!(cycles, 5);
+        assert_eq!(bus.read(0xFFFD), 0x34); // low byte
+        assert_eq!(bus.read(0xFFFC), 0x12); // high byte
+        assert_eq!(cpu.registers.sp, 0xFFFC);
+    }
+
+    #[test]
+    fn test_rst() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFE;
+        cpu.registers.pc = 0x1000;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        let cycles = exec_rst(&mut cpu, 0x08, &mut bus);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.pc, 0x0008);
+        // Return address should be 0x1001 (PC + 1 after RST)
+        assert_eq!(bus.read(0xFFFD), 0x01);
+        assert_eq!(bus.read(0xFFFC), 0x10);
+        assert_eq!(cpu.registers.sp, 0xFFFC);
+    }
+
+    #[test]
+    fn test_add_sp_imm8_positive() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFF00;
+
+        let cycles = exec_add_sp_imm8(&mut cpu, 10);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.sp, 0xFF0A);
+        assert!(!cpu.registers.f().is_zero());
+        assert!(!cpu.registers.f().is_subtraction());
+        assert!(!cpu.registers.f().is_carry());
+    }
+
+    #[test]
+    fn test_add_sp_imm8_negative() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFF00;
+
+        let cycles = exec_add_sp_imm8(&mut cpu, -10);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.sp, 0xFEF6);
+        assert!(!cpu.registers.f().is_zero());
+        assert!(!cpu.registers.f().is_subtraction());
+        // Should have carry for negative offset
+        assert!(cpu.registers.f().is_carry());
+    }
+
+    #[test]
+    fn test_add_sp_imm8_half_carry() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0x000F;
+
+        let cycles = exec_add_sp_imm8(&mut cpu, 1);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.sp, 0x0010);
+        assert!(cpu.registers.f().is_half_carry());
+    }
+
+    #[test]
+    fn test_add_sp_imm8_carry() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0x00FF;
+
+        let cycles = exec_add_sp_imm8(&mut cpu, 1);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.registers.sp, 0x0100);
+        assert!(cpu.registers.f().is_carry());
+    }
+
+    #[test]
+    fn test_ld_hl_sp_imm8_positive() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFF00;
+
+        let cycles = exec_ld_hl_sp_imm8(&mut cpu, 10);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.registers.hl, 0xFF0A);
+        assert!(!cpu.registers.f().is_zero());
+        assert!(!cpu.registers.f().is_subtraction());
+    }
+
+    #[test]
+    fn test_ld_hl_sp_imm8_negative() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFF00;
+
+        let cycles = exec_ld_hl_sp_imm8(&mut cpu, -10);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.registers.hl, 0xFEF6);
+    }
+
+    #[test]
+    fn test_ld_sp_hl() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.hl = 0x8000;
+
+        let cycles = exec_ld_sp_hl(&mut cpu);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.registers.sp, 0x8000);
+    }
+
+    #[test]
+    fn test_di() {
+        let mut cpu = init_cpu_state();
+        cpu.ime = true;
+
+        let cycles = exec_di(&mut cpu);
+
+        assert_eq!(cycles, 1);
+        assert!(!cpu.ime);
+    }
+
+    #[test]
+    fn test_ei() {
+        let mut cpu = init_cpu_state();
+        cpu.ime = false;
+
+        let cycles = exec_ei(&mut cpu);
+
+        assert_eq!(cycles, 1);
+        assert!(cpu.ime);
+    }
+
+    #[test]
+    fn test_ldh_ind_c_a() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.set_c(0x10);
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        let cycles = exec_ldh_ind_c_a(&mut cpu, &mut bus);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(bus.read(0xFF10), cpu.registers.a());
+    }
+
+    #[test]
+    fn test_ldh_a_c() {
+        let mut cpu = init_cpu_state();
+        cpu.registers.set_c(0x10);
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xFF10, 0xAB);
+
+        let cycles = exec_ldh_a_c(&mut cpu, &mut bus);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.registers.a(), 0xAB);
+    }
+
+    #[test]
+    fn test_ldh_ind_imm8_a() {
+        let mut cpu = init_cpu_state();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        let cycles = exec_ldh_ind_imm8_a(&mut cpu, 0x10, &mut bus);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(bus.read(0xFF10), cpu.registers.a());
+    }
+
+    #[test]
+    fn test_ldh_a_ind_imm8() {
+        let mut cpu = init_cpu_state();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+        bus.write(0xFF10, 0xAB);
+
+        let cycles = exec_ldh_a_ind_imm8(&mut cpu, 0x10, &mut bus);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.registers.a(), 0xAB);
+    }
+}
