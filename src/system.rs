@@ -109,6 +109,23 @@ impl System {
         // It returns the number of machine cycles consumed.
         let machine_cycles = self.cpu.execute(&mut self.mmu);
 
+        // Drain any timer register writes that the CPU made this step.
+        // The Timer struct is the authoritative source for timer state; writes
+        // to 0xFF04-0xFF07 go through write_io which queues them here.
+        if self.mmu.timer_div_reset {
+            self.timer.write_div();
+            self.mmu.timer_div_reset = false;
+        }
+        if let Some(v) = self.mmu.timer_tima_write.take() {
+            self.timer.write_tima(v);
+        }
+        if let Some(v) = self.mmu.timer_tma_write.take() {
+            self.timer.write_tma(v);
+        }
+        if let Some(v) = self.mmu.timer_tac_write.take() {
+            self.timer.write_tac(v);
+        }
+
         // Optionally log the instruction that just ran, including raw opcode bytes and a
         // disassembly‑style mnemonic. This mirrors the output format of the
         // built‑in disassembler (e.g. "$0100 00           NOP").

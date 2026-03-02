@@ -36,6 +36,13 @@ pub struct MemoryBus {
     pub ie: u8, // Interrupt Enable (FFFF)
     pub mbc: MemoryBankController,
     pub cgb_mode: bool, // CGB mode enabled
+
+    // Pending timer register writes — set by write_io and drained by System::step
+    // into the Timer struct, which is the authoritative source for timer state.
+    pub timer_div_reset: bool,
+    pub timer_tima_write: Option<u8>,
+    pub timer_tma_write: Option<u8>,
+    pub timer_tac_write: Option<u8>,
 }
 
 // Global serial log file for output (using Arc<Mutex<File>> for sharing)
@@ -126,6 +133,10 @@ impl MemoryBus {
             mbc,
             cgb_mode: false,
             flat_mode: false,
+            timer_div_reset: false,
+            timer_tima_write: None,
+            timer_tma_write: None,
+            timer_tac_write: None,
         }
     }
 
@@ -219,12 +230,20 @@ impl MemoryBus {
             0x04 => {
                 // DIV — any write resets the divider to 0.
                 self.io[offset] = 0x00;
+                self.timer_div_reset = true;
             }
-            0x05 => self.io[offset] = value, // TIMA
-            0x06 => self.io[offset] = value, // TMA
+            0x05 => {
+                self.io[offset] = value; // TIMA
+                self.timer_tima_write = Some(value);
+            }
+            0x06 => {
+                self.io[offset] = value; // TMA
+                self.timer_tma_write = Some(value);
+            }
             0x07 => {
                 // TAC — only bits 0-2 are defined.
                 self.io[offset] = value & 0x07;
+                self.timer_tac_write = Some(value & 0x07);
             }
             0x0F => {
                 // IF: bits 0-4 are the interrupt flags; bits 5-7 are open bus and always read 1.
