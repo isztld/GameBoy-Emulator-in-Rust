@@ -40,8 +40,8 @@ pub fn exec_pop_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memory
 pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
     let value = r16(&cpu_state.registers, reg);
-    bus.write(sp.wrapping_sub(1), (value >> 8) as u8);
-    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);
+    bus.write(sp.wrapping_sub(1), (value >> 8) as u8);       // high byte at sp-1
+    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);   // low byte at sp-2
     cpu_state.registers.sp = sp.wrapping_sub(2);
     5
 }
@@ -49,41 +49,40 @@ pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memor
 /// Execute RST n
 pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
-    // RST is 1 byte, so return address is PC + 1 (next instruction after RST)
-    // Stack grows down, so we write low byte first (at sp-1), then high byte (at sp-2)
-    let return_pc = cpu_state.registers.pc + 1;
-    bus.write(sp.wrapping_sub(1), (return_pc & 0x00FF) as u8); // low byte
-    bus.write(sp.wrapping_sub(2), (return_pc >> 8) as u8);     // high byte
+    let return_pc = cpu_state.registers.pc.wrapping_add(1);
+    bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);       // high byte at sp-1
+    bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8);   // low byte at sp-2
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = target as u16;
     4
 }
 
+
 /// Execute ADD SP, r8
 pub fn exec_add_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
     let sp = cpu_state.registers.sp;
-    let result = sp.wrapping_add(value as u16);
+    // Flags are computed on the unsigned byte addition — the offset's raw
+    // bit pattern is treated as an unsigned byte for H and C flag purposes.
+    let rhs_byte = value as u8 as u16;
+    let result = sp.wrapping_add(value as i16 as u16);
     cpu_state.registers.sp = result;
     cpu_state.registers.f_mut().set_zero(false);
     cpu_state.registers.f_mut().set_subtraction(false);
-    // Half carry: carry from bit 3 to bit 4
-    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (value as u16 & 0x0F) > 0x0F);
-    // Carry: set when there's a borrow from bit 15 (for negative values)
-    // For ADD SP, r8 with negative value: carry is set when lower byte underflows
-    let result_i16 = ((sp as i16).wrapping_add(value as i16)) as u16;
-    cpu_state.registers.f_mut().set_carry(result_i16 < sp);
+    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F);
+    cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF);
     4
 }
 
 /// Execute LD (HL), SP
 pub fn exec_ld_hl_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
-    let sp = cpu_state.registers.sp as i32;
-    let result = sp.wrapping_add(value as i32) as u16;
+    let sp = cpu_state.registers.sp;
+    let rhs_byte = value as u8 as u16;
+    let result = sp.wrapping_add(value as i16 as u16);
     cpu_state.registers.hl = result;
     cpu_state.registers.f_mut().set_zero(false);
     cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (value as i32 & 0x0F) > 0x0F);
-    cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (value as i32 & 0xFF) > 0xFF);
+    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F);
+    cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF);
     3
 }
 
@@ -197,14 +196,13 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFFFC;
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        bus.write(0xFFFC, 0x34); // low byte
-        bus.write(0xFFFD, 0x12); // high byte
+        bus.write(0xFFFC, 0x34); // low byte (F — lower 4 bits must read back as 0)
+        bus.write(0xFFFD, 0x12); // high byte (A)
 
         let cycles = exec_pop_r16(&mut cpu, R16Register::AF, &mut bus);
 
         assert_eq!(cycles, 3);
-        // AF should have lower 4 bits of F cleared
-        assert_eq!(cpu.registers.af, 0x1230);
+        assert_eq!(cpu.registers.af, 0x1230); // lower nibble of F always 0
     }
 
     #[test]
@@ -217,9 +215,25 @@ mod tests {
         let cycles = exec_push_r16(&mut cpu, R16Register::BC, &mut bus);
 
         assert_eq!(cycles, 5);
-        assert_eq!(bus.read(0xFFFD), 0x34); // low byte
-        assert_eq!(bus.read(0xFFFC), 0x12); // high byte
         assert_eq!(cpu.registers.sp, 0xFFFC);
+        assert_eq!(bus.read(0xFFFD), 0x12); // high byte at sp-1
+        assert_eq!(bus.read(0xFFFC), 0x34); // low byte at sp-2
+    }
+
+    #[test]
+    fn test_push_pop_roundtrip() {
+        // PUSH followed by POP must restore the original value.
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFE;
+        cpu.registers.bc = 0xABCD;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        exec_push_r16(&mut cpu, R16Register::BC, &mut bus);
+        cpu.registers.bc = 0x0000;
+        exec_pop_r16(&mut cpu, R16Register::BC, &mut bus);
+
+        assert_eq!(cpu.registers.bc, 0xABCD);
+        assert_eq!(cpu.registers.sp, 0xFFFE);
     }
 
     #[test]
@@ -233,10 +247,25 @@ mod tests {
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.pc, 0x0008);
-        // Return address should be 0x1001 (PC + 1 after RST)
-        assert_eq!(bus.read(0xFFFD), 0x01);
-        assert_eq!(bus.read(0xFFFC), 0x10);
         assert_eq!(cpu.registers.sp, 0xFFFC);
+        // Return address 0x1001: high byte at sp+1 (0xFFFD), low byte at sp (0xFFFC)
+        assert_eq!(bus.read(0xFFFD), 0x10); // high byte of 0x1001
+        assert_eq!(bus.read(0xFFFC), 0x01); // low byte of 0x1001
+    }
+
+    #[test]
+    fn test_rst_ret_roundtrip() {
+        // RST followed by RET must land on PC+1 of the RST instruction.
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFFFE;
+        cpu.registers.pc = 0x1000;
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        exec_rst(&mut cpu, 0x08, &mut bus);
+        exec_ret(&mut cpu, &mut bus);
+
+        assert_eq!(cpu.registers.pc, 0x1001);
+        assert_eq!(cpu.registers.sp, 0xFFFE);
     }
 
     #[test]
@@ -250,21 +279,25 @@ mod tests {
         assert_eq!(cpu.registers.sp, 0xFF0A);
         assert!(!cpu.registers.f().is_zero());
         assert!(!cpu.registers.f().is_subtraction());
+        assert!(!cpu.registers.f().is_half_carry());
         assert!(!cpu.registers.f().is_carry());
     }
 
     #[test]
     fn test_add_sp_imm8_negative() {
+        // SP=0xFF1F, offset=-1 (rhs_byte=0xFF)
+        // half-carry: (0x0F + 0x0F) = 0x1E > 0x0F → set
+        // carry:      (0x1F + 0xFF) = 0x11E > 0xFF → set
         let mut cpu = init_cpu_state();
-        cpu.registers.sp = 0xFF00;
+        cpu.registers.sp = 0xFF1F;
 
-        let cycles = exec_add_sp_imm8(&mut cpu, -10);
+        let cycles = exec_add_sp_imm8(&mut cpu, -1);
 
         assert_eq!(cycles, 4);
-        assert_eq!(cpu.registers.sp, 0xFEF6);
+        assert_eq!(cpu.registers.sp, 0xFF1E);
         assert!(!cpu.registers.f().is_zero());
         assert!(!cpu.registers.f().is_subtraction());
-        // Should have carry for negative offset
+        assert!(cpu.registers.f().is_half_carry());
         assert!(cpu.registers.f().is_carry());
     }
 
@@ -278,6 +311,7 @@ mod tests {
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0x0010);
         assert!(cpu.registers.f().is_half_carry());
+        assert!(!cpu.registers.f().is_carry());
     }
 
     #[test]
@@ -290,6 +324,22 @@ mod tests {
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0x0100);
         assert!(cpu.registers.f().is_carry());
+        assert!(cpu.registers.f().is_half_carry());
+    }
+
+    #[test]
+    fn test_add_sp_imm8_no_carry_for_clean_negative() {
+        // SP=0xFF00, offset=-16 (rhs_byte=0xF0)
+        // half-carry: (0x00 + 0x00) = 0x00, not > 0x0F → clear
+        // carry:      (0x00 + 0xF0) = 0xF0, not > 0xFF → clear
+        let mut cpu = init_cpu_state();
+        cpu.registers.sp = 0xFF00;
+
+        exec_add_sp_imm8(&mut cpu, -16);
+
+        assert_eq!(cpu.registers.sp, 0xFEF0);
+        assert!(!cpu.registers.f().is_carry());
+        assert!(!cpu.registers.f().is_half_carry());
     }
 
     #[test]
@@ -301,6 +351,7 @@ mod tests {
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.hl, 0xFF0A);
+        assert_eq!(cpu.registers.sp, 0xFF00); // SP must not change
         assert!(!cpu.registers.f().is_zero());
         assert!(!cpu.registers.f().is_subtraction());
     }
@@ -314,6 +365,7 @@ mod tests {
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.hl, 0xFEF6);
+        assert_eq!(cpu.registers.sp, 0xFF00); // SP must not change
     }
 
     #[test]
@@ -325,16 +377,14 @@ mod tests {
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.sp, 0x8000);
+        assert_eq!(cpu.registers.hl, 0x8000); // HL must not change
     }
 
     #[test]
     fn test_di() {
         let mut cpu = init_cpu_state();
         cpu.ime = true;
-
-        let cycles = exec_di(&mut cpu);
-
-        assert_eq!(cycles, 1);
+        assert_eq!(exec_di(&mut cpu), 1);
         assert!(!cpu.ime);
     }
 
@@ -342,23 +392,21 @@ mod tests {
     fn test_ei() {
         let mut cpu = init_cpu_state();
         cpu.ime = false;
-
-        let cycles = exec_ei(&mut cpu);
-
-        assert_eq!(cycles, 1);
+        assert_eq!(exec_ei(&mut cpu), 1);
         assert!(cpu.ime);
     }
 
     #[test]
     fn test_ldh_ind_c_a() {
         let mut cpu = init_cpu_state();
+        cpu.registers.set_a(0x42);
         cpu.registers.set_c(0x10);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
         let cycles = exec_ldh_ind_c_a(&mut cpu, &mut bus);
 
         assert_eq!(cycles, 2);
-        assert_eq!(bus.read(0xFF10), cpu.registers.a());
+        assert_eq!(bus.read(0xFF10), 0x42);
     }
 
     #[test]
@@ -377,12 +425,13 @@ mod tests {
     #[test]
     fn test_ldh_ind_imm8_a() {
         let mut cpu = init_cpu_state();
+        cpu.registers.set_a(0x77);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
         let cycles = exec_ldh_ind_imm8_a(&mut cpu, 0x10, &mut bus);
 
         assert_eq!(cycles, 3);
-        assert_eq!(bus.read(0xFF10), cpu.registers.a());
+        assert_eq!(bus.read(0xFF10), 0x77);
     }
 
     #[test]
