@@ -68,22 +68,8 @@ pub fn load_tests_from_dir(dir: &str) -> Vec<TestCase> {
 
 /// Run a single test case and return whether it passed
 pub fn run_test_case(test: &TestCase) -> Result<(), String> {
-    // First, load the ROM with the test instruction bytes
-    // The name field contains hex bytes like "cd a5 d0"
-    let name_parts: Vec<&str> = test.name.split_whitespace().collect();
-    let mut rom = vec![0u8; 65536]; // Full 64KB ROM
-
-    // Parse the instruction bytes from name
-    let mut pc_offset = 0;
-    for part in &name_parts {
-        if let Ok(byte) = u8::from_str_radix(part, 16) {
-            rom[test.initial.pc as usize + pc_offset] = byte;
-            pc_offset += 1;
-        }
-    }
-
-    // Create a new bus with the ROM
-    let mut bus = MemoryBus::new(rom);
+    // Create a new bus with empty ROM (zeros)
+    let mut bus = MemoryBus::new(vec![0u8; 65536]);
 
     // Restore initial RAM values
     for &(addr, val) in &test.initial.ram {
@@ -100,28 +86,44 @@ pub fn run_test_case(test: &TestCase) -> Result<(), String> {
     cpu.state_mut().halted = initial_state.halted;
     cpu.state_mut().stopped = initial_state.stopped;
 
-    // Execute until we reach target PC
-    let target_pc = test.final_state.pc;
+    eprintln!("  Initial PC: {:04X}, A={:02X}, B={:02X}, C={:02X}, D={:02X}, E={:02X}, H={:02X}, L={:02X}",
+        cpu.state().registers.pc,
+        cpu.state().registers.a(),
+        cpu.state().registers.b(),
+        cpu.state().registers.c(),
+        cpu.state().registers.d(),
+        cpu.state().registers.e(),
+        cpu.state().registers.h(),
+        cpu.state().registers.l());
 
-    while cpu.state().registers.pc != target_pc {
-        let pc = cpu.state().registers.pc;
-        let opcode = bus.read(pc);
+    // Get the target PC from the test
+    let _target_pc = test.final_state.pc;
 
-        // Decode and execute
-        let (instruction, opcode_bytes) = decode_instruction(cpu.state(), &bus, pc, opcode);
+    // Execute exactly one instruction
+    let pc = cpu.state().registers.pc;
+    let opcode = bus.read(pc);
 
-        // Advance PC before execution (matching the real CPU behavior)
-        cpu.state_mut().registers.pc = pc.wrapping_add(opcode_bytes as u16);
+    eprintln!("  PC={:04X}, opcode={:02X}", pc, opcode);
 
-        // Execute the instruction
-        execute_instruction(cpu.state_mut(), &mut bus, instruction);
+    // Decode and execute
+    let (instruction, opcode_bytes) = decode_instruction(cpu.state(), &bus, pc, opcode);
+    eprintln!("  instruction={:?}, opcode_bytes={}", instruction, opcode_bytes);
 
-        // Safety limit to prevent infinite loops
-        if cpu.cycles() > 10000 {
-            return Err(format!("Test exceeded max cycles (PC={:04X}, target={:04X})",
-                cpu.state().registers.pc, target_pc));
-        }
-    }
+    // Advance PC (the instruction execution may change PC too, e.g., for jumps)
+    cpu.state_mut().registers.pc = pc.wrapping_add(opcode_bytes as u16);
+
+    // Execute the instruction (this may further modify PC for control flow instructions)
+    execute_instruction(cpu.state_mut(), &mut bus, instruction);
+
+    eprintln!("  Final PC: {:04X}, A={:02X}, B={:02X}, C={:02X}, D={:02X}, E={:02X}, H={:02X}, L={:02X}",
+        cpu.state().registers.pc,
+        cpu.state().registers.a(),
+        cpu.state().registers.b(),
+        cpu.state().registers.c(),
+        cpu.state().registers.d(),
+        cpu.state().registers.e(),
+        cpu.state().registers.h(),
+        cpu.state().registers.l());
 
     // Verify final state
     verify_state(test, &bus, cpu.state())
@@ -225,10 +227,12 @@ fn verify_state(test: &TestCase, bus: &MemoryBus, cpu_state: &CPUState) -> Resul
 pub fn run_all_tests(dir: &str) -> (usize, usize, Vec<String>) {
     let tests = load_tests_from_dir(dir);
     let total = tests.len();
+    eprintln!("Loaded {} tests", total);
     let mut passed = 0;
     let mut failures = Vec::new();
 
     for (i, test) in tests.iter().enumerate() {
+        eprintln!("[{:02}] Running test: {}", i, test.name);
         match run_test_case(test) {
             Ok(()) => passed += 1,
             Err(msg) => {
