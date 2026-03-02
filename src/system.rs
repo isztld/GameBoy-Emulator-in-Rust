@@ -109,13 +109,42 @@ impl System {
         // It returns the number of machine cycles consumed.
         let machine_cycles = self.cpu.execute(&mut self.mmu);
 
-        // Optionally log the instruction that just ran.
+        // Optionally log the instruction that just ran, including raw opcode bytes and a
+        // disassembly‑style mnemonic. This mirrors the output format of the
+        // built‑in disassembler (e.g. "$0100 00           NOP").
         if let Some(ref file) = self.cpu_log_file {
+            // Capture the CPU state *after* execution for register values.
             let s = self.cpu.state();
+
+            // Decode the instruction at the pre‑execution PC to obtain the
+            // mnemonic and length. The decoder does not modify state.
+            use crate::cpu::decode::decode_instruction;
+            let opcode = self.mmu.read(pre_pc);
+            let (instr, len) = decode_instruction(&self.cpu.state(), &self.mmu, pre_pc, opcode);
+
+            // Gather the raw bytes for the instruction.
+            let mut raw_bytes = Vec::new();
+            for i in 0..len {
+                raw_bytes.push(self.mmu.read(pre_pc.wrapping_add(i as u16)));
+            }
+            let byte_str = raw_bytes
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            // Use the Debug representation of the Instruction as a simple mnemonic.
+            // Most Instruction variants implement Debug in a readable form.
+            let mnemonic = format!("{:?}", instr);
+
+            // Pad the byte string to a fixed width for alignment (max 3 bytes = 8 chars).
+            let padded_bytes = format!("{:<9}", byte_str);
+
             let line = format!(
-                "PC=${:04X} A:{:02X} F:{:02X} B:{:02X} C:{:02X} \
-                 D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} CY:{}\n",
+                "PC=${:04X} {} {:<20} A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} CY:{}\n",
                 pre_pc,
+                padded_bytes,
+                mnemonic,
                 s.registers.a(),
                 s.registers.f().get(),
                 s.registers.b(),
