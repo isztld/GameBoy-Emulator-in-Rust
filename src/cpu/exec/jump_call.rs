@@ -46,9 +46,9 @@ pub fn exec_jp_hl(cpu_state: &mut CPUState) -> u32 {
 pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: u16, bus: &mut MemoryBus) -> u32 {
     if cond_condition(cpu_state, cond) {
         let sp = cpu_state.registers.sp;
-        // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
-        // Stack grows down. Write high byte first then low byte to match PUSH semantics.
-        let return_pc = cpu_state.registers.pc + 3;
+        // PC has already been advanced past the instruction's operand bytes by the
+        // caller, so it holds the correct return address (the byte after CALL).
+        let return_pc = cpu_state.registers.pc;
         bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);     // high byte
         bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8); // low byte
         cpu_state.registers.sp = sp.wrapping_sub(2);
@@ -62,9 +62,9 @@ pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: 
 /// Execute CALL a16
 pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryBus) -> u32 {
     let sp = cpu_state.registers.sp;
-    // CALL is 3 bytes, so return address is PC + 3 (next instruction after CALL)
-    // Stack grows down. Write high byte first, then low byte to match PUSH semantics.
-    let return_pc = cpu_state.registers.pc + 3;
+    // PC has already been advanced past the instruction's operand bytes by the
+    // caller, so it holds the correct return address (the byte after CALL).
+    let return_pc = cpu_state.registers.pc;
     bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);     // high byte
     bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8); // low byte
     cpu_state.registers.sp = sp.wrapping_sub(2);

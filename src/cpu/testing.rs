@@ -68,12 +68,22 @@ pub fn load_tests_from_dir(dir: &str) -> Vec<TestCase> {
 
 /// Run a single test case and return whether it passed
 pub fn run_test_case(test: &TestCase) -> Result<(), String> {
-    // Create a new bus with empty ROM (zeros)
-    let mut bus = MemoryBus::new(vec![0u8; 65536]);
-
-    // Restore initial RAM values
+    // Pre-populate ROM data so that writes to ROM-mapped addresses (0x0000–0x7FFF)
+    // are visible to reads. bus.write() in that range hits the MBC control path and
+    // never modifies self.rom, so we must seed the ROM vector directly.
+    let mut rom_data = vec![0u8; 65536];
     for &(addr, val) in &test.initial.ram {
-        bus.write(addr, val);
+        if addr < 0x8000 {
+            rom_data[addr as usize] = val;
+        }
+    }
+    let mut bus = MemoryBus::new(rom_data);
+
+    // Write non-ROM initial values through the normal bus path.
+    for &(addr, val) in &test.initial.ram {
+        if addr >= 0x8000 {
+            bus.write(addr, val);
+        }
     }
 
     // Create initial CPU state
@@ -99,21 +109,29 @@ pub fn run_test_case(test: &TestCase) -> Result<(), String> {
     // Get the target PC from the test
     let _target_pc = test.final_state.pc;
 
-    // Execute exactly one instruction
-    let pc = cpu.state().registers.pc;
-    let opcode = bus.read(pc);
+    // The SM83 tests use a decode-execute-prefetch loop: initial.pc is already past the
+    // opcode byte (the opcode was pre-fetched at initial.pc - 1).  Operands start at
+    // initial.pc and the last M-cycle is always a prefetch of the next instruction that
+    // reads from [PC] and increments PC by 1.
+    let pc = cpu.state().registers.pc; // = initial.pc (already past the opcode)
+    let opcode = bus.read(pc.wrapping_sub(1)); // opcode is at initial.pc - 1
 
     eprintln!("  PC={:04X}, opcode={:02X}", pc, opcode);
 
-    // Decode and execute
-    let (instruction, opcode_bytes) = decode_instruction(cpu.state(), &bus, pc, opcode);
+    // Decode: pass pc-1 so operand reads land at initial.pc, initial.pc+1, etc.
+    let (instruction, opcode_bytes) = decode_instruction(cpu.state(), &bus, pc.wrapping_sub(1), opcode);
     eprintln!("  instruction={:?}, opcode_bytes={}", instruction, opcode_bytes);
 
-    // Advance PC (the instruction execution may change PC too, e.g., for jumps)
-    cpu.state_mut().registers.pc = pc.wrapping_add(opcode_bytes as u16);
+    // Advance PC past the operand bytes only (the opcode byte is already consumed).
+    // For a 1-byte instruction opcode_bytes == 1, so this leaves PC == initial.pc.
+    cpu.state_mut().registers.pc = pc.wrapping_add(opcode_bytes as u16 - 1);
 
-    // Execute the instruction (this may further modify PC for control flow instructions)
+    // Execute the instruction (jumps/calls override PC to their target).
     execute_instruction(cpu.state_mut(), &mut bus, instruction);
+
+    // Prefetch cycle: every instruction's final M-cycle reads the next opcode byte,
+    // incrementing PC by 1 regardless of whether a jump was taken.
+    cpu.state_mut().registers.pc = cpu.state().registers.pc.wrapping_add(1);
 
     eprintln!("  Final PC: {:04X}, A={:02X}, B={:02X}, C={:02X}, D={:02X}, E={:02X}, H={:02X}, L={:02X}",
         cpu.state().registers.pc,
