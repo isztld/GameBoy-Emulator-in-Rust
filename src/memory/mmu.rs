@@ -46,14 +46,18 @@ impl MemoryBus {
 
     /// Write a character to the serial log or stdout if not configured.
     /// Does NOT append a newline — callers write raw characters.
-    pub fn write_serial_char(c: char) {
+    pub fn write_serial_byte(byte: u8) {
         let log_file = SERIAL_LOG_FILE.lock().unwrap();
         if let Some(ref file) = *log_file {
             let mut f = file.lock().unwrap();
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            f.write_all(s.as_bytes()).ok();
+            f.write_all(&[byte]).ok(); // write raw byte
             f.flush().ok();
+        } else {
+            if byte.is_ascii_graphic() || byte == b' ' {
+                // Fallback to stdout
+                print!("{}", byte as char);
+                std::io::stdout().flush().ok();
+            }
         }
     }
 
@@ -188,7 +192,7 @@ impl MemoryBus {
                 self.io[offset] = value & 0x7F;
                 if value & 0x80 != 0 {
                     let data = self.io[0x01];
-                    MemoryBus::write_serial_char(data as char);
+                    MemoryBus::write_serial_byte(data as u8);
                 }
             }
             0x04 => {

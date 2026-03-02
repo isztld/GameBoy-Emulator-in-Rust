@@ -29,3 +29,6 @@ Temporary Items
 
 /pandoc
 /test_roms
+
+cpu.log
+serial.log
