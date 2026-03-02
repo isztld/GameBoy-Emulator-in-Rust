@@ -121,6 +121,9 @@ impl VideoController {
                     self.mode_clock = 0;
                     if self.ly >= 144 {
                         self.mode = PpuMode::VBlank;
+                        // Set VBlank interrupt (bit 0 of IF at 0xFF0F)
+                        let if_val = bus.read(0xFF0F);
+                        bus.write(0xFF0F, if_val | 0x01);
                     } else {
                         self.mode = PpuMode::HBlank;
                     }
@@ -147,6 +150,9 @@ impl VideoController {
                     if self.ly > 153 {
                         self.ly = 0;
                         self.mode = PpuMode::OamScan;
+                        // Clear VBlank interrupt (bit 0 of IF at 0xFF0F)
+                        let if_val = bus.read(0xFF0F);
+                        bus.write(0xFF0F, if_val & !0x01);
                     }
                 }
             }
@@ -226,5 +232,52 @@ mod tests {
         assert!(lcdc.bg_tile_map_display());
         assert_eq!(lcdc.obj_size(), 8);
         assert!(lcdc.obj_display());
+    }
+
+    #[test]
+    fn test_vblank_interrupt_triggered_on_entry() {
+        let mut video = VideoController::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Start in PixelTransfer mode with LY=143 and most of the cycles done
+        // so next update will complete PixelTransfer and enter VBlank
+        video.mode = PpuMode::PixelTransfer;
+        video.ly = 143;
+        video.mode_clock = 42; // Almost done with PixelTransfer
+
+        // Run one more cycle to complete PixelTransfer and enter VBlank
+        video.update(&mut bus);
+
+        // Should now be in VBlank mode with LY=144
+        assert_eq!(video.mode, PpuMode::VBlank, "Should enter VBlank mode");
+        assert_eq!(video.ly, 144);
+
+        // VBlank interrupt bit (bit 0) should be set in IF register
+        let if_val = bus.read(0xFF0F);
+        assert_eq!(if_val & 0x01, 0x01, "VBlank interrupt bit should be set");
+    }
+
+    #[test]
+    fn test_vblank_interrupt_cleared_on_exit() {
+        let mut video = VideoController::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Set initial state to VBlank with IF bit set
+        bus.write(0xFF0F, 0x01); // Set VBlank interrupt
+
+        // Manually set mode to VBlank
+        video.mode = PpuMode::VBlank;
+        video.ly = 153; // Just before returning to OamScan
+
+        // Run enough cycles to exit VBlank
+        for _ in 0..114 {
+            video.update(&mut bus);
+        }
+        assert_eq!(video.mode, PpuMode::OamScan);
+        assert_eq!(video.ly, 0);
+
+        // VBlank interrupt bit should be cleared
+        let if_val = bus.read(0xFF0F);
+        assert_eq!(if_val & 0x01, 0x00, "VBlank interrupt bit should be cleared");
     }
 }
