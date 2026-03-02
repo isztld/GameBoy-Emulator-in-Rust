@@ -53,11 +53,18 @@ impl MemoryBus {
             f.write_all(&[byte]).ok(); // write raw byte
             f.flush().ok();
         } else {
+            // Fallback to stdout: only print printable ASCII or space
             if byte.is_ascii_graphic() || byte == b' ' {
-                // Fallback to stdout
                 print!("{}", byte as char);
-                std::io::stdout().flush().ok();
+            } else if byte == b'\n' {
+                print!("\n");
+            } else if byte == b'\r' {
+                print!("\r");
+            } else {
+                // Show non-printable as hex in brackets
+                print!("[{:02X}]", byte);
             }
+            std::io::stdout().flush().ok();
         }
     }
 
@@ -171,7 +178,7 @@ impl MemoryBus {
     /// Returns the high nibble of the low address byte mirrored into both nibbles.
     fn read_fea0(&self, address: u16) -> u8 {
         let nibble = ((address & 0x00F0) >> 4) as u8;
-        nibble
+        (nibble << 4) | nibble
     }
 
     /// Handle writes to I/O registers (0xFF00–0xFF7F).
@@ -455,12 +462,13 @@ mod tests {
     #[test]
     fn test_fea0_feff_read() {
         let bus = make_bus(32768);
-        assert_eq!(bus.read(0xFEA0), 0x0A);
-        assert_eq!(bus.read(0xFEB0), 0x0B);
-        assert_eq!(bus.read(0xFEC0), 0x0C);
-        assert_eq!(bus.read(0xFED0), 0x0D);
-        assert_eq!(bus.read(0xFEE0), 0x0E);
-        assert_eq!(bus.read(0xFEF0), 0x0F);
+        // Returns high nibble duplicated in both halves (e.g., 0xFEA0 -> 0xAA)
+        assert_eq!(bus.read(0xFEA0), 0xAA);
+        assert_eq!(bus.read(0xFEB0), 0xBB);
+        assert_eq!(bus.read(0xFEC0), 0xCC);
+        assert_eq!(bus.read(0xFED0), 0xDD);
+        assert_eq!(bus.read(0xFEE0), 0xEE);
+        assert_eq!(bus.read(0xFEF0), 0xFF);
     }
 
     #[test]

@@ -31,27 +31,33 @@ pub trait AudioChannel {
     fn reset(&mut self);
 }
 
+// Re-export channel types from channels module to avoid duplicate definitions
+pub use crate::audio::channels::{SquareChannel, WaveChannel, NoiseChannel};
+
 /// Audio Processing Unit
 pub struct AudioProcessor {
     pub channels: [Box<dyn AudioChannel>; 4],
     pub enabled: bool,
     pub master_volume: u8, // NR50
     pub output_select: u8, // NR51
+    wave_pattern: [u8; 32], // Wave pattern RAM (0xFF30-0xFF3F)
 }
 
 impl AudioProcessor {
     pub fn new() -> Self {
-        // Initialize channels (placeholders for now)
+        // Initialize channels
+        // Note: SquareChannel from channels.rs doesn't take channel_id
         AudioProcessor {
             channels: [
-                Box::new(SquareChannel::new(0)),
-                Box::new(SquareChannel::new(1)),
+                Box::new(SquareChannel::new()),
+                Box::new(SquareChannel::new()),
                 Box::new(WaveChannel::new()),
                 Box::new(NoiseChannel::new()),
             ],
             enabled: false,
             master_volume: 0x00,
             output_select: 0x00,
+            wave_pattern: [0; 32],
         }
     }
 
@@ -197,8 +203,7 @@ impl AudioProcessor {
         // Wave pattern RAM at 0xFF30-0xFF3F
         // Each address corresponds to one byte of the 32-byte wave pattern
         let index = (address as usize) - 0xFF30;
-        // TODO: Store wave pattern data
-        let _ = (index, value);
+        self.wave_pattern[index] = value;
     }
 
     /// Check if audio is enabled
@@ -210,140 +215,5 @@ impl AudioProcessor {
 impl Default for AudioProcessor {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Square Wave Channel (Channels 1 and 2)
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct SquareChannel {
-    channel_id: usize,
-    frequency: u16,
-    length: u8,
-    envelope: u8,
-    position: u8,
-    enabled: bool,
-}
-
-impl SquareChannel {
-    pub fn new(channel_id: usize) -> Self {
-        SquareChannel {
-            channel_id,
-            frequency: 0,
-            length: 0,
-            envelope: 0,
-            position: 0,
-            enabled: false,
-        }
-    }
-}
-
-impl AudioChannel for SquareChannel {
-    fn clock(&mut self) -> bool {
-        // Clock the channel
-        self.position = self.position.wrapping_add(1);
-        true
-    }
-
-    fn get_output(&self) -> f32 {
-        if !self.enabled {
-            return 0.0;
-        }
-        // Simple square wave output
-        if self.position & 0x01 == 0 {
-            1.0
-        } else {
-            0.0
-        }
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    fn reset(&mut self) {
-        self.position = 0;
-        self.enabled = true;
-    }
-}
-
-/// Wave Channel (Channel 3)
-#[derive(Debug)]
-pub struct WaveChannel {
-    enabled: bool,
-}
-
-impl WaveChannel {
-    pub fn new() -> Self {
-        WaveChannel { enabled: false }
-    }
-}
-
-impl AudioChannel for WaveChannel {
-    fn clock(&mut self) -> bool {
-        true
-    }
-
-    fn get_output(&self) -> f32 {
-        if !self.enabled {
-            return 0.0;
-        }
-        0.5
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    fn reset(&mut self) {
-        self.enabled = true;
-    }
-}
-
-/// Noise Channel (Channel 4)
-#[derive(Debug)]
-pub struct NoiseChannel {
-    enabled: bool,
-    shift_register: u32,
-}
-
-impl NoiseChannel {
-    pub fn new() -> Self {
-        NoiseChannel {
-            enabled: false,
-            shift_register: 0x7FFF,
-        }
-    }
-}
-
-impl AudioChannel for NoiseChannel {
-    fn clock(&mut self) -> bool {
-        // LFSR feedback for noise generation
-        let bit0 = self.shift_register & 1;
-        let bit1 = (self.shift_register >> 1) & 1;
-        let feedback = bit0 ^ bit1;
-        self.shift_register >>= 1;
-        self.shift_register |= feedback << 14;
-        true
-    }
-
-    fn get_output(&self) -> f32 {
-        if !self.enabled {
-            return 0.0;
-        }
-        if self.shift_register & 1 == 1 {
-            1.0
-        } else {
-            0.0
-        }
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    fn reset(&mut self) {
-        self.shift_register = 0x7FFF;
-        self.enabled = true;
     }
 }

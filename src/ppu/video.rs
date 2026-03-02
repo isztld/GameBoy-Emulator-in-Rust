@@ -157,14 +157,14 @@ impl VideoController {
     }
 
     fn update_stat(&mut self) {
-        // Set mode bits (bits 2-3)
-        self.stat &= !0x06;
+        // Set mode bits (bits 0-1)
+        self.stat &= !0x03;
         self.stat |= match self.mode {
-            PpuMode::HBlank => 0x02,
+            PpuMode::HBlank => 0x00,
             PpuMode::VBlank => 0x01,
-            PpuMode::OamScan => 0x02, // Mode 2
+            PpuMode::OamScan => 0x02,
             PpuMode::PixelTransfer => 0x03,
-        } << 2;
+        };
 
         // Check LYC comparison
         if self.ly == self.lyc {

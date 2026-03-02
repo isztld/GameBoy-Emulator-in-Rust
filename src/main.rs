@@ -12,6 +12,7 @@ pub mod timer;
 pub mod input;
 pub mod system;
 pub mod config;
+pub mod disasm;
 
 use std::env;
 use std::fs;
@@ -20,10 +21,11 @@ use std::path::Path;
 use system::System;
 use config::EmulatorFlags;
 
-fn parse_flags() -> (EmulatorFlags, String) {
+fn parse_flags() -> (EmulatorFlags, String, bool) {
     let mut flags = EmulatorFlags::default();
     let args: Vec<String> = env::args().collect();
 
+    let mut disassemble = false;
     let mut i = 1; // Skip program name
     while i < args.len() {
         match args[i].as_str() {
@@ -41,11 +43,25 @@ fn parse_flags() -> (EmulatorFlags, String) {
                     flags.log_serial_file = args[i].clone();
                 }
             }
+            "--disasm" => {
+                disassemble = true;
+            }
+            "--cycle-limit" => {
+                if i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                    i += 1;
+                    flags.cycle_limit = Some(args[i].parse::<u64>().expect("Invalid cycle limit value"));
+                } else {
+                    eprintln!("--cycle-limit requires a numeric argument");
+                    std::process::exit(1);
+                }
+            }
             "--help" | "-h" => {
                 println!("Usage: {} [options] <rom_file>", args[0]);
                 println!("\nOptions:");
                 println!("  --cpu-log [file]      Enable CPU instruction logging (default: cpu_log.txt)");
                 println!("  --serial-log [file]   Enable serial output logging (default: serial_log.txt)");
+                println!("  --disasm              Disassemble ROM instead of running");
+                println!("  --cycle-limit <n>     Set maximum cycles to execute");
                 println!("  --help, -h            Show this help message");
                 std::process::exit(0);
             }
@@ -65,11 +81,11 @@ fn parse_flags() -> (EmulatorFlags, String) {
     }
 
     let rom_path = args[i].clone();
-    (flags, rom_path)
+    (flags, rom_path, disassemble)
 }
 
 fn main() {
-    let (flags, rom_path) = parse_flags();
+    let (flags, rom_path, disassemble) = parse_flags();
 
     // Load ROM
     let rom_data = match load_rom(&rom_path) {
@@ -79,6 +95,18 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    if disassemble {
+        // Disassemble mode
+        let bus = disasm::MemoryBus::new(rom_data);
+        let instructions = disasm::disasm_region(&bus, 0x0100, 50);
+        println!("Disassembly starting at 0x0100:");
+        for instr in instructions {
+            let hex: Vec<String> = instr.bytes.iter().map(|b| format!("{:02X}", b)).collect();
+            println!("${:04X} {:12} {:8} {}", instr.address, hex.join(" "), instr.mnemonic, instr.operand_str);
+        }
+        return;
+    }
 
     println!("Loaded ROM: {} bytes", rom_data.len());
     println!("CPU logging: {} (-> {})", flags.log_cpu, flags.log_cpu_file);

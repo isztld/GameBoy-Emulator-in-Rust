@@ -71,7 +71,7 @@ impl System {
             running: false,
             frame_complete: false,
             total_cycles: 0,
-            cycle_limit: None,
+            cycle_limit: flags.cycle_limit,
             cpu_log_file,
         };
         system.reset();

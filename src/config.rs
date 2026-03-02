@@ -7,6 +7,7 @@ pub struct EmulatorFlags {
     pub log_cpu_file: String,
     pub log_serial: bool,
     pub log_serial_file: String,
+    pub cycle_limit: Option<u64>,
 }
 
 impl Default for EmulatorFlags {
@@ -16,6 +17,7 @@ impl Default for EmulatorFlags {
             log_cpu_file: "cpu_log.txt".to_string(),
             log_serial: false,
             log_serial_file: "serial_log.txt".to_string(),
+            cycle_limit: None,
         }
     }
 }

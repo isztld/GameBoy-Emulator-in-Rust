@@ -1,5 +1,7 @@
 /// Audio channel implementations
 
+use crate::audio::apu::AudioChannel;
+
 /// Channel types
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Channel {
@@ -141,5 +143,97 @@ impl NoiseChannel {
 impl Default for NoiseChannel {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl AudioChannel for SquareChannel {
+    fn clock(&mut self) -> bool {
+        // Clock the channel
+        true
+    }
+
+    fn get_output(&self) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        // Simple square wave output based on duty cycle
+        let duty_values = [0.125, 0.25, 0.5, 0.75]; // 12.5%, 25%, 50%, 75%
+        let duty_index = (self.duty_cycle >> 6) as usize;
+        let duty = duty_values[duty_index.min(3)];
+        if duty > 0.0 {
+            1.0 * duty
+        } else {
+            0.0
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn reset(&mut self) {
+        self.enabled = true;
+    }
+}
+
+impl AudioChannel for WaveChannel {
+    fn clock(&mut self) -> bool {
+        true
+    }
+
+    fn get_output(&self) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        // Simple wave output using volume
+        let vol = (self.volume >> 4) as u8;
+        if vol == 0 {
+            0.0
+        } else {
+            1.0 * (vol as f32 / 7.0)
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn reset(&mut self) {
+        self.enabled = true;
+    }
+}
+
+impl AudioChannel for NoiseChannel {
+    fn clock(&mut self) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        // LFSR feedback
+        let bit0 = self.shift_register & 1;
+        let bit1 = (self.shift_register >> 1) & 1;
+        let feedback = bit0 ^ bit1;
+        self.shift_register >>= 1;
+        self.shift_register |= feedback << 14;
+        true
+    }
+
+    fn get_output(&self) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        if self.shift_register & 1 == 1 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn reset(&mut self) {
+        self.shift_register = 0x7FFF;
+        self.enabled = true;
     }
 }
