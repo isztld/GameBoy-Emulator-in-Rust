@@ -66,7 +66,6 @@ mod tests {
     #[test]
     fn test_inc_r16() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.bc = 0x1234;
 
         let cycles = exec_inc_r16(&mut cpu, R16Register::BC);
@@ -78,7 +77,6 @@ mod tests {
     #[test]
     fn test_inc_r16_wrap() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.bc = 0xFFFF;
 
         let cycles = exec_inc_r16(&mut cpu, R16Register::BC);
@@ -90,7 +88,6 @@ mod tests {
     #[test]
     fn test_dec_r16() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.bc = 0x1234;
 
         let cycles = exec_dec_r16(&mut cpu, R16Register::BC);
@@ -102,7 +99,6 @@ mod tests {
     #[test]
     fn test_dec_r16_wrap() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.bc = 0x0000;
 
         let cycles = exec_dec_r16(&mut cpu, R16Register::BC);
@@ -169,7 +165,7 @@ mod tests {
     #[test]
     fn test_add_hl_r16_no_carry() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let _bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.hl = 0x1000;
         cpu.registers.bc = 0x2000;
 
@@ -185,7 +181,6 @@ mod tests {
     #[test]
     fn test_add_hl_r16_with_carry() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.hl = 0xFFFF;
         cpu.registers.bc = 0x0001;
 
@@ -199,7 +194,6 @@ mod tests {
     #[test]
     fn test_add_hl_r16_half_carry() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.hl = 0x0FFF;
         cpu.registers.bc = 0x0001;
 
@@ -213,7 +207,6 @@ mod tests {
     #[test]
     fn test_add_hl_r16_different_registers() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.hl = 0x1000;
         cpu.registers.de = 0x2000;
 

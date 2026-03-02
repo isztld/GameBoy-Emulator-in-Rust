@@ -1,6 +1,5 @@
 /// Data transfer instruction executors
 use crate::memory::MemoryBus;
-use crate::memory::MemoryBankController;
 use crate::cpu::CPUState;
 use crate::cpu::instructions::R16Register;
 use crate::cpu::exec::register_utils::{set_r16, get_r8, set_r8};
@@ -105,7 +104,7 @@ mod tests {
     #[test]
     fn test_ld_r16_imm16() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let _bus = MemoryBus::new(vec![0; 32768]);
 
         let cycles = exec_ld_r16_imm16(&mut cpu, R16Register::BC, 0x1234);
 
@@ -116,7 +115,7 @@ mod tests {
     #[test]
     fn test_ld_r16_imm16_all_registers() {
         let mut cpu = init_cpu_state();
-        let mut bus = MemoryBus::new(vec![0; 32768]);
+        let _bus = MemoryBus::new(vec![0; 32768]);
 
         exec_ld_r16_imm16(&mut cpu, R16Register::DE, 0x5678);
         assert_eq!(cpu.registers.de, 0x5678);
