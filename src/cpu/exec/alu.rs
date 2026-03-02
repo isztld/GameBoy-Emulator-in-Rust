@@ -27,7 +27,7 @@ pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(((a & 0xF) + (val & 0xF) + old_c) > 0xF);
-    cpu_state.registers.f_mut().set_carry(result < a);
+    cpu_state.registers.f_mut().set_carry((a as u16) + (val as u16) + (old_c as u16) > 0xFF);
     1
 }
 
@@ -132,7 +132,7 @@ pub fn exec_adc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (value & 0x0F) + old_c as u8 > 0x0F);
-    cpu_state.registers.f_mut().set_carry(result < a);
+    cpu_state.registers.f_mut().set_carry((a as u16) + (value as u16) + (old_c as u16) > 0xFF);
     2
 }
 
