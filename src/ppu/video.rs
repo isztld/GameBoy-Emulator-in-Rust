@@ -231,13 +231,13 @@ mod tests {
         let mut video = VideoController::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        // Start in PixelTransfer mode with LY=143 and most of the cycles done
-        // so next update will complete PixelTransfer and enter VBlank
-        video.mode = PpuMode::PixelTransfer;
+        // Start in HBlank mode with LY=143 and most of the cycles done
+        // so next update will complete HBlank, increment LY to 144, and enter VBlank
+        video.mode = PpuMode::HBlank;
         video.ly = 143;
-        video.mode_clock = 42; // Almost done with PixelTransfer
+        video.mode_clock = 50; // Almost done with HBlank
 
-        // Run one more cycle to complete PixelTransfer and enter VBlank
+        // Run one more cycle to complete HBlank and enter VBlank
         video.update(&mut bus);
 
         // Should now be in VBlank mode with LY=144
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn test_vblank_interrupt_cleared_on_exit() {
+    fn test_vblank_interrupt_persists_through_vblank() {
         let mut video = VideoController::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
@@ -268,8 +268,37 @@ mod tests {
         assert_eq!(video.mode, PpuMode::OamScan);
         assert_eq!(video.ly, 0);
 
-        // VBlank interrupt bit should be cleared
+        // VBlank interrupt bit should persist (CPU clears it when servicing the interrupt)
         let if_val = bus.read(0xFF0F);
-        assert_eq!(if_val & 0x01, 0x00, "VBlank interrupt bit should be cleared");
+        assert_eq!(if_val & 0x01, 0x01, "VBlank interrupt bit should persist until CPU clears it");
+    }
+
+    #[test]
+    fn test_full_vblank_duration() {
+        let mut video = VideoController::new();
+        let mut bus = MemoryBus::new(vec![0; 32768]);
+
+        // Start in HBlank mode with LY=143, about to enter VBlank
+        video.mode = PpuMode::HBlank;
+        video.ly = 143;
+        video.mode_clock = 50;
+
+        // Run to enter VBlank
+        video.update(&mut bus);
+        assert_eq!(video.mode, PpuMode::VBlank);
+        assert_eq!(video.ly, 144);
+
+        // Simulate full VBlank duration: 10 scanlines (144-153) at 114 cycles each = 1140 cycles
+        for _ in 144..=153 {
+            for _ in 0..114 {
+                video.update(&mut bus);
+            }
+        }
+        assert_eq!(video.mode, PpuMode::OamScan);
+        assert_eq!(video.ly, 0);
+
+        // VBlank interrupt should still be set (not cleared by PPU)
+        let if_val = bus.read(0xFF0F);
+        assert_eq!(if_val & 0x01, 0x01, "VBlank interrupt should persist after VBlank ends");
     }
 }
