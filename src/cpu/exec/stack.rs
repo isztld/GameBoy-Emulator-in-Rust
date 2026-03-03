@@ -44,7 +44,7 @@ pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memor
     bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);   // low byte at sp‑2
     bus.write(sp.wrapping_sub(1), (value >> 8) as u8);       // high byte at sp‑1
     cpu_state.registers.sp = sp.wrapping_sub(2);
-    5
+    4
 }
 
 /// Execute RST n
@@ -216,7 +216,7 @@ mod tests {
 
         let cycles = exec_push_r16(&mut cpu, R16Register::BC, &mut bus);
 
-        assert_eq!(cycles, 5);
+        assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0xFFFC);
         assert_eq!(bus.read(0xFFFD), 0x12); // high byte at sp-1
         assert_eq!(bus.read(0xFFFC), 0x34); // low byte at sp-2

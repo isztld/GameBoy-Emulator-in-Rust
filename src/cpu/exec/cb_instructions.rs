@@ -31,7 +31,7 @@ pub fn exec_rlcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute RRC r8
@@ -43,7 +43,7 @@ pub fn exec_rrcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute RL r8
@@ -56,7 +56,7 @@ pub fn exec_rlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register)
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute RR r8
@@ -69,7 +69,7 @@ pub fn exec_rrr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register)
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute SLA r8
@@ -81,7 +81,7 @@ pub fn exec_slar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute SRA r8
@@ -93,7 +93,7 @@ pub fn exec_srar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute SWAP r8
@@ -105,7 +105,7 @@ pub fn exec_swapr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Registe
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
     cpu_state.registers.f_mut().set_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute SRL r8
@@ -117,7 +117,7 @@ pub fn exec_srlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute BIT b, r8
@@ -126,7 +126,7 @@ pub fn exec_bitbr8(cpu_state: &mut CPUState, _bus: &mut MemoryBus, bit: u8, reg:
     cpu_state.registers.f_mut().set_zero(((val >> bit) & 1) == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(true);
-    2
+    if reg == R8Register::HL { 3 } else { 2 }
 }
 
 /// Execute RES b, r8
@@ -134,7 +134,7 @@ pub fn exec_resbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: 
     let mut val = get_r8(&cpu_state.registers, bus, reg);
     val &= !(1 << bit);
     set_r8(&mut cpu_state.registers, bus, reg, val);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute SET b, r8
@@ -142,7 +142,7 @@ pub fn exec_setbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: 
     let mut val = get_r8(&cpu_state.registers, bus, reg);
     val |= 1 << bit;
     set_r8(&mut cpu_state.registers, bus, reg, val);
-    2
+    if reg == R8Register::HL { 4 } else { 2 }
 }
 
 #[cfg(test)]

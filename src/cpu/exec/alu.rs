@@ -14,7 +14,7 @@ pub fn exec_add_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (val & 0x0F) > 0x0F);
     cpu_state.registers.f_mut().set_carry(result < a);
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute ADC A, r8
@@ -28,7 +28,7 @@ pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(((a & 0xF) + (val & 0xF) + old_c) > 0xF);
     cpu_state.registers.f_mut().set_carry((a as u16) + (val as u16) + (old_c as u16) > 0xFF);
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute SUB A, r8
@@ -41,7 +41,7 @@ pub fn exec_sub_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < val);
     cpu_state.registers.f_mut().set_half_carry((a & 0xF) < (val & 0xF));
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute SBC A, r8
@@ -57,7 +57,7 @@ pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let borrow = val as u16 + old_c as u16;
     cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
     cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (val as u32 & 0xF) + old_c as u32);
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute AND A, r8
@@ -70,7 +70,7 @@ pub fn exec_and_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(true);
     cpu_state.registers.f_mut().set_carry(false);
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute XOR A, r8
@@ -83,7 +83,7 @@ pub fn exec_xor_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
     cpu_state.registers.f_mut().set_carry(false);
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute OR A, r8
@@ -96,7 +96,7 @@ pub fn exec_or_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
     cpu_state.registers.f_mut().set_carry(false);
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute CP A, r8
@@ -108,7 +108,7 @@ pub fn exec_cp_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < val);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (val & 0x0F));
-    1
+    if reg == R8Register::HL { 2 } else { 1 }
 }
 
 /// Execute ADD A, d8

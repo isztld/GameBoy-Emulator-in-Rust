@@ -4,6 +4,7 @@ pub mod cpu;
 pub mod decode;
 pub mod exec;
 pub mod testing;
+pub mod cycle_validation;
 
 pub use registers::{Registers, Flags, CPUState};
 pub use cpu::CPU;
