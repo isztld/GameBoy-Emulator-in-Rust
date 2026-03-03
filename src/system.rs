@@ -101,6 +101,9 @@ impl System {
         // Capture PC *before* execution so the log shows the instruction
         // that is about to run, not the one after it.
         let pre_pc = self.cpu.state().registers.pc;
+        // Also capture spin state before execute() so the logger can skip
+        // spurious "instructions" that are just spin-cycle noise.
+        let was_spinning = self.cpu.is_spinning();
 
         // CPU::execute:
         //   - services any pending interrupt (IE & IF, sets PC to vector), or
@@ -129,6 +132,8 @@ impl System {
         // Optionally log the instruction that just ran, including raw opcode bytes and a
         // disassembly‑style mnemonic. This mirrors the output format of the
         // built‑in disassembler (e.g. "$0100 00           NOP").
+        // Skip spin cycles (halted/stopped) — they don't execute an instruction.
+        if !was_spinning {
         if let Some(ref file) = self.cpu_log_file {
             // Capture the CPU state *after* execution for register values.
             let s = self.cpu.state();
@@ -175,6 +180,7 @@ impl System {
             );
             file.lock().unwrap().write_all(line.as_bytes()).ok();
         }
+        } // end !was_spinning
 
         // Tick every peripheral once per machine cycle.
         // Order: Timer → PPU → APU, matching hardware timing dependencies.
@@ -188,8 +194,9 @@ impl System {
             // appropriate.
             self.ppu.update(&mut self.mmu);
 
-            // Sync PPU's LY value to MMU's I/O register so CPU reads can see current scanline
+            // Sync PPU's LY and STAT to MMU I/O so CPU reads see current values.
             self.mmu.update_ly(self.ppu.get_ly());
+            self.mmu.update_ppu_stat(self.ppu.read_stat());
 
             // AudioProcessor::clock advances the APU sequencer.
             self.apu.clock();

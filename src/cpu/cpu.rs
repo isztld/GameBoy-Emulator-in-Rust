@@ -60,6 +60,8 @@ impl CPU {
     pub fn state(&self) -> &CPUState { &self.state }
     pub fn state_mut(&mut self) -> &mut CPUState { &mut self.state }
     pub fn cycles(&self) -> u64 { self.cycles }
+    /// True when the CPU is spinning in HALT or STOP — no instruction is executed this cycle.
+    pub fn is_spinning(&self) -> bool { self.halted || self.stopped }
 
     /// Execute one step: service a pending interrupt OR execute one instruction.
     /// Returns the number of machine cycles consumed (1 machine cycle = 4 T-cycles).
@@ -110,7 +112,20 @@ impl CPU {
                 1
             }
             Instruction::STOP => {
-                self.stopped = true;
+                // KEY1 (0xFF4D) bit 0 = CGB double-speed switch request.
+                // On CGB, STOP after writing KEY1=1 performs the speed switch
+                // and resumes immediately.  On DMG the write is ignored, but
+                // some ROMs (including combined Blargg tests) hit this path
+                // due to CGB-detection code that runs unconditionally.
+                // Treat a pending speed-switch as a no-op rather than halting
+                // forever (we don't support CGB double-speed).
+                let key1 = bus.read(0xFF4D);
+                if key1 & 0x01 != 0 {
+                    // Clear the speed-switch request and continue (CGB compat).
+                    bus.write(0xFF4D, key1 & !0x01);
+                } else {
+                    self.stopped = true;
+                }
                 1
             }
             instr => execute_instruction(&mut self.state, bus, instr),

@@ -225,6 +225,8 @@ impl MemoryBus {
                 if value & 0x80 != 0 {
                     let data = self.io[0x01];
                     MemoryBus::write_serial_byte(data as u8);
+                    // Fire serial transfer complete interrupt (IF bit 3)
+                    self.io[0x0F] = 0xE0 | ((self.io[0x0F] | 0x08) & 0x1F);
                 }
             }
             0x04 => {
@@ -312,6 +314,13 @@ impl MemoryBus {
     /// but the MMU's io array needs to reflect this for CPU reads.
     pub fn update_ly(&mut self, ly: u8) {
         self.io[68] = ly; // 0xFF44 - 0xFF00 = 68
+    }
+
+    /// Update STAT bits 0-2 (mode + LYC-match) from the PPU.
+    /// Bits 3-6 (interrupt selects written by software) are preserved.
+    /// Bit 7 is always 1 per hardware spec.
+    pub fn update_ppu_stat(&mut self, stat: u8) {
+        self.io[0x41] = 0x80 | (self.io[0x41] & 0x78) | (stat & 0x07);
     }
 }
 

@@ -117,16 +117,8 @@ impl VideoController {
             PpuMode::PixelTransfer => {
                 self.mode_clock += 1;
                 if self.mode_clock >= 43 {
-                    self.ly += 1;
                     self.mode_clock = 0;
-                    if self.ly >= 144 {
-                        self.mode = PpuMode::VBlank;
-                        // Set VBlank interrupt (bit 0 of IF at 0xFF0F)
-                        let if_val = bus.read(0xFF0F);
-                        bus.write(0xFF0F, if_val | 0x01);
-                    } else {
-                        self.mode = PpuMode::HBlank;
-                    }
+                    self.mode = PpuMode::HBlank;
                 }
             }
             PpuMode::HBlank => {
@@ -134,9 +126,11 @@ impl VideoController {
                 if self.mode_clock >= 51 {
                     self.ly += 1;
                     self.mode_clock = 0;
-                    if self.ly >= 153 {
-                        self.mode = PpuMode::OamScan;
-                        self.ly = 0;
+                    if self.ly >= 144 {
+                        self.mode = PpuMode::VBlank;
+                        // Set VBlank interrupt (bit 0 of IF)
+                        let if_val = bus.read(0xFF0F);
+                        bus.write(0xFF0F, if_val | 0x01);
                     } else {
                         self.mode = PpuMode::OamScan;
                     }
@@ -150,9 +144,7 @@ impl VideoController {
                     if self.ly > 153 {
                         self.ly = 0;
                         self.mode = PpuMode::OamScan;
-                        // Clear VBlank interrupt (bit 0 of IF at 0xFF0F)
-                        let if_val = bus.read(0xFF0F);
-                        bus.write(0xFF0F, if_val & !0x01);
+                        // Do NOT clear IF bit 0 here — the CPU clears it when servicing the interrupt
                     }
                 }
             }
