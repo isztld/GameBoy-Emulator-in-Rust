@@ -29,6 +29,7 @@ Temporary Items
 
 /pandoc
 /test_roms
+/GameboyCPUTests
 
 cpu.log
 serial.log
