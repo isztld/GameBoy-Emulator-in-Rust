@@ -215,7 +215,7 @@ mod tests {
     fn test_call_cond_imm16_taken() {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFFFE;
-        cpu.registers.pc = 0x1000;
+        cpu.registers.pc = 0x1003;
         cpu.registers.f_mut().set_zero(false);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
@@ -248,7 +248,7 @@ mod tests {
     fn test_call_imm16() {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFFFE;
-        cpu.registers.pc = 0x1000;
+        cpu.registers.pc = 0x1003;
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
         let cycles = exec_call_imm16(&mut cpu, 0x8000, &mut bus);

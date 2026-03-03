@@ -1439,7 +1439,7 @@ mod tests {
     fn test_call_imm16() {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.pc = 0x1000;
+        cpu.state.registers.pc = 0x1003;
         cpu.state.registers.sp = 0xC000;
 
         let instruction = crate::cpu::instructions::Instruction::CallImm16 {
@@ -1457,7 +1457,7 @@ mod tests {
     fn test_call_cond_nz_taken() {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.pc = 0x1000;
+        cpu.state.registers.pc = 0x1003;
         cpu.state.registers.sp = 0xC000;
         cpu.state.registers.f_mut().set_zero(false); // Z = 0
 
