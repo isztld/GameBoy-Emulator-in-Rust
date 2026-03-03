@@ -109,8 +109,12 @@ fn main() {
     }
 
     println!("Loaded ROM: {} bytes", rom_data.len());
-    println!("CPU logging: {} (-> {})", flags.log_cpu, flags.log_cpu_file);
-    println!("Serial logging: {} (-> {})", flags.log_serial, flags.log_serial_file);
+    if flags.log_cpu {
+        println!("CPU logging enabled (-> {})", flags.log_cpu_file);
+    }
+    if flags.log_serial {
+        println!("Serial logging enabled (-> {})", flags.log_serial_file);
+    }
 
     // Create system with logging enabled
     let mut system = System::new(rom_data, flags);
