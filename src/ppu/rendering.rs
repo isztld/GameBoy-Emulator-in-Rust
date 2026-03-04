@@ -75,8 +75,36 @@ impl Renderer {
         pixels
     }
 
-    /// Render a background scanline
-    /// Returns 160 pixel values for the scanline
+    /// Decode two bitplane bytes into 8 pixel colour indices (0-3).
+    fn decode_bitplanes(lsb: u8, msb: u8) -> [u8; 8] {
+        let mut row = [0u8; 8];
+        for i in 0..8usize {
+            let bit = 7 - i;
+            let lo = (lsb >> bit) & 1;
+            let hi = (msb >> bit) & 1;
+            row[i] = (hi << 1) | lo;
+        }
+        row
+    }
+
+    /// Return the VRAM byte-offset of the first byte of a tile's row data.
+    /// Handles both addressing modes:
+    ///   - tile_data_select=true  → 0x8000 base, unsigned index 0-255
+    ///   - tile_data_select=false → 0x9000 base, signed index -128..127
+    fn tile_row_vram_offset(raw_index: u8, tile_row: usize, tile_data_select: bool) -> usize {
+        let tile_base: usize = if tile_data_select {
+            (raw_index as usize) * 16
+        } else {
+            let signed = raw_index as i8;
+            (0x1000i32 + signed as i32 * 16) as usize
+        };
+        tile_base + tile_row * 2
+    }
+
+    /// Render a background scanline.
+    /// Reads tile map and tile data directly from `bus.vram` to avoid the
+    /// per-byte `bus.read()` dispatch overhead and the stale tile-cache.
+    /// Decodes each tile row once and caches it for the 8 pixels it covers.
     pub fn render_background(
         &self,
         bus: &MemoryBus,
@@ -85,102 +113,110 @@ impl Renderer {
         scroll_x: u8,
         scroll_y: u8,
     ) -> [u8; 160] {
-        let mut pixels = [0; 160];
+        let mut pixels = [0u8; 160];
 
         if !lcdc.is_enabled() {
             return pixels;
         }
 
-        // Determine tile map base address
-        let tile_map_base = if lcdc.tile_map_select() { 0x9C00 } else { 0x9800 };
+        // Tile map lives in VRAM; base offset relative to start of vram (0x8000).
+        let tile_map_vram_base: usize = if lcdc.tile_map_select() { 0x1C00 } else { 0x1800 };
+        let tile_data_select = lcdc.tile_data_select();
 
-        // Determine tile data base (used for signed tile indices)
-        let _tile_data_base = if lcdc.tile_data_select() { 0x8000 } else { 0x9000 };
+        let bg_y = scanline_y.wrapping_add(scroll_y) as usize;
+        let tile_row = bg_y % 8;
+        let tile_map_row = (bg_y / 8) % 32;
 
-        let bg_y = (scanline_y as i32 + scroll_y as i32) as u32;
-        let bg_x_start = scroll_x as i32;
+        // Cache the decoded pixel row for the current tile so we only call
+        // decode_bitplanes once per 8-pixel tile span instead of per pixel.
+        let mut cached_tile_x = usize::MAX;
+        let mut cached_row = [0u8; 8];
 
-        for screen_x in 0..160 {
-            let x = (bg_x_start + screen_x as i32) as u32;
-            let tile_x = (x / 8) % 32;
-            let tile_y = (bg_y / 8) % 32;
+        for screen_x in 0..160usize {
+            let bg_x = (screen_x + scroll_x as usize) & 0xFF;
+            let tile_map_col = (bg_x / 8) % 32;
 
-            let tile_map_offset = tile_map_base as u32 + tile_y * 32 + tile_x;
-            let tile_index = bus.read(tile_map_offset as u16) as i8;
+            if tile_map_col != cached_tile_x {
+                let map_offset = tile_map_vram_base + tile_map_row * 32 + tile_map_col;
+                let raw_index = bus.vram[map_offset];
+                let data_offset = Self::tile_row_vram_offset(raw_index, tile_row, tile_data_select);
+                let lsb = bus.vram[data_offset];
+                let msb = bus.vram[data_offset + 1];
+                cached_row = Self::decode_bitplanes(lsb, msb);
+                cached_tile_x = tile_map_col;
+            }
 
-            let tile_idx = if lcdc.tile_data_select() {
-                // Signed tile indices for 8000-7FFF
-                if tile_index >= 0 {
-                    tile_index as u16
-                } else {
-                    256 + (tile_index as u16)
-                }
-            } else {
-                tile_index as u16
-            };
-
-            let tile_row = (bg_y % 8) as usize;
-            let tile = match self.get_tile(tile_idx as usize) {
-                Some(t) => t,
-                None => continue,
-            };
-
-            let pixel_row = self.decode_tile_row(tile, tile_row);
-            let pixel_x = (x % 8) as usize;
-
-            pixels[screen_x as usize] = pixel_row[pixel_x];
+            pixels[screen_x] = cached_row[bg_x % 8];
         }
 
         pixels
     }
 
-    /// Render sprites for a scanline
-    /// Returns sprite pixels and their positions
+    /// Render sprites for a scanline into a fixed-size overlay buffer.
+    /// `out[x]` is non-zero where a sprite pixel should overwrite the background.
+    /// Uses direct VRAM access; no heap allocation.
     pub fn render_sprites(
         &self,
+        bus: &MemoryBus,
         oam_bytes: &[u8; 160],
         scanline_y: u8,
         lcdc: &Lcdc,
-    ) -> Vec<(usize, u8)> {
-        let mut sprites = Vec::new();
-        let height = lcdc.obj_size();
+        out: &mut [u8; 160],
+    ) {
+        if !lcdc.obj_display() {
+            return;
+        }
 
-        // Parse OAM entries from raw bytes
-        for i in 0..40 {
-            let offset = i * 4;
-            if offset + 3 < oam_bytes.len() {
-                let y = oam_bytes[offset];
-                let x = oam_bytes[offset + 1];
-                let tile = oam_bytes[offset + 2];
-                let _flags = oam_bytes[offset + 3];
+        let height = lcdc.obj_size(); // 8 or 16
+        let tile_data_select = true; // sprites always use 0x8000-base addressing
 
-                // Check if sprite is on this scanline
-                if x < 0x90 && y < 0x90 && scanline_y >= y && scanline_y < y + height as u8 {
-                    let tile_row = (scanline_y - y) as usize;
-                    let tile = self.get_tile(tile as usize);
+        for i in 0..40usize {
+            let base = i * 4;
+            let sprite_y = oam_bytes[base];
+            let sprite_x = oam_bytes[base + 1];
+            let raw_tile  = oam_bytes[base + 2];
+            let flags     = oam_bytes[base + 3];
 
-                    if let Some(t) = tile {
-                        let pixel_row = self.decode_tile_row(t, tile_row);
+            // GB OAM: sprite_y is the bottom of the sprite + 16, sprite_x is left + 8.
+            // A sprite with sprite_y=0 or sprite_x=0 is hidden.
+            if sprite_y == 0 || sprite_x == 0 || sprite_y >= 160 || sprite_x >= 168 {
+                continue;
+            }
 
-                        for j in 0..8 {
-                            let pixel_x = x as usize + j;
-                            if pixel_x < 160 {
-                                let pixel_val = pixel_row[j];
-                                if pixel_val != 0 {
-                                    sprites.push((pixel_x, pixel_val));
-                                }
-                            }
-                        }
-                    }
+            let screen_top = sprite_y.saturating_sub(16);
+            let screen_bottom = screen_top + height as u8;
+
+            if scanline_y < screen_top || scanline_y >= screen_bottom {
+                continue;
+            }
+
+            let mut tile_row = (scanline_y - screen_top) as usize;
+            let tile_index = if height == 16 {
+                if flags & 0x40 != 0 { tile_row = 15 - tile_row; } // Y-flip
+                if tile_row < 8 { raw_tile & 0xFE } else { tile_row -= 8; raw_tile | 0x01 }
+            } else {
+                if flags & 0x40 != 0 { tile_row = 7 - tile_row; } // Y-flip
+                raw_tile
+            };
+
+            let data_offset = Self::tile_row_vram_offset(tile_index, tile_row, tile_data_select);
+            let lsb = bus.vram[data_offset];
+            let msb = bus.vram[data_offset + 1];
+            let mut row = Self::decode_bitplanes(lsb, msb);
+
+            if flags & 0x20 != 0 { row.reverse(); } // X-flip
+
+            for px in 0..8usize {
+                let screen_x = (sprite_x as usize + px).wrapping_sub(8);
+                if screen_x < 160 && row[px] != 0 {
+                    out[screen_x] = row[px];
                 }
             }
         }
-
-        sprites
     }
 
-    /// Render a complete scanline to the frame buffer
-    /// Combines background and sprite rendering for a single scanline
+    /// Render a complete scanline to the frame buffer.
+    /// Combines background and sprite rendering for a single scanline.
     pub fn render_scanline(
         &self,
         frame_buffer: &mut FrameBuffer,
@@ -195,22 +231,16 @@ impl Renderer {
             return;
         }
 
-        // Get background pixels for this scanline
         let bg_pixels = self.render_background(bus, scanline_y, lcdc, scroll_x, scroll_y);
 
-        // Write background pixels to frame buffer
+        // Sprite overlay — zero means "no sprite pixel here"
+        let mut sprite_pixels = [0u8; 160];
+        self.render_sprites(bus, oam_bytes, scanline_y, lcdc, &mut sprite_pixels);
+
+        let y = scanline_y as usize;
         for x in 0..SCREEN_WIDTH {
-            frame_buffer.set_pixel(x, scanline_y as usize, bg_pixels[x]);
-        }
-
-        // Get sprite pixels for this scanline
-        let sprites = self.render_sprites(oam_bytes, scanline_y, lcdc);
-
-        // Draw sprites on top of background (sprites have priority)
-        for (sprite_x, sprite_color) in sprites {
-            if sprite_x < SCREEN_WIDTH {
-                frame_buffer.set_pixel(sprite_x, scanline_y as usize, sprite_color);
-            }
+            let color = if sprite_pixels[x] != 0 { sprite_pixels[x] } else { bg_pixels[x] };
+            frame_buffer.set_pixel(x, y, color);
         }
     }
 
