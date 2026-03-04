@@ -122,7 +122,9 @@ impl MemoryBus {
         io[0x44] = 0x00; // LY
         io[0x45] = 0x00; // LYC
         io[0x46] = 0xFF; // DMA
-        io[0x47] = 0xFC; // BGP
+        io[0x47] = 0xFC; // BGP  (DMG power-on default)
+        io[0x48] = 0xFF; // OBP0 (DMG power-on default)
+        io[0x49] = 0xFF; // OBP1 (DMG power-on default)
         io[0x4A] = 0x00; // WY
         io[0x4B] = 0x00; // WX
 

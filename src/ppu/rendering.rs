@@ -87,6 +87,13 @@ impl Renderer {
         row
     }
 
+    /// Map a raw colour index (0-3) through a GB palette register to a shade (0-3).
+    /// Palette register layout: bits 1-0 = shade for index 0, bits 3-2 = index 1, etc.
+    #[inline]
+    fn apply_palette(palette: u8, idx: u8) -> u8 {
+        (palette >> (idx * 2)) & 0x03
+    }
+
     /// Return the VRAM byte-offset of the first byte of a tile's row data.
     /// Handles both addressing modes:
     ///   - tile_data_select=true  → 0x8000 base, unsigned index 0-255
@@ -153,8 +160,9 @@ impl Renderer {
     }
 
     /// Render the window overlay for a scanline.
-    /// Window pixels are non-zero where the window should be drawn.
-    /// Window rendering is similar to background but starts from window position.
+    /// `window_line` is the PPU's internal window line counter (separate from LY).
+    /// It increments only on scanlines where the window is actually visible, so it
+    /// correctly handles mid-frame window enable/disable and WY changes.
     pub fn render_window(
         &self,
         bus: &MemoryBus,
@@ -162,6 +170,7 @@ impl Renderer {
         lcdc: &Lcdc,
         wx: u8,
         wy: u8,
+        window_line: u8,
         out: &mut [u8; 160],
     ) {
         // Window must be enabled and scanline must be at or below window Y
@@ -180,8 +189,8 @@ impl Renderer {
         let tile_map_vram_base: usize = if lcdc.window_tile_map_select() { 0x1C00 } else { 0x1800 };
         let tile_data_select = lcdc.tile_data_select();
 
-        // Window scanline within the window (0-159)
-        let window_y = (scanline_y - wy) as usize;
+        // Use the internal window line counter, not scanline_y - wy.
+        let window_y = window_line as usize;
         let tile_row = window_y % 8;
         let tile_map_row = (window_y / 8) % 32;
 
@@ -213,7 +222,8 @@ impl Renderer {
     /// Render sprites for a scanline into a fixed-size overlay buffer.
     /// `out[x]` is non-zero where a sprite pixel should be drawn.
     /// `out_priority[x]` is true when OAM flag bit 7 is set (sprite behind BG).
-    /// Lower OAM index wins when sprites overlap (first sprite in OAM has priority).
+    /// `out_palette[x]` is true when the sprite should use OBP1 (flag bit 4 set).
+    /// Lower OAM X value wins when sprites overlap; ties broken by lower OAM index.
     /// Uses direct VRAM access; no heap allocation.
     pub fn render_sprites(
         &self,
@@ -223,6 +233,7 @@ impl Renderer {
         lcdc: &Lcdc,
         out: &mut [u8; 160],
         out_priority: &mut [bool; 160],
+        out_palette: &mut [bool; 160],
     ) {
         if !lcdc.obj_display() {
             return;
@@ -277,6 +288,7 @@ impl Renderer {
                 if screen_x < 160 && row[px] != 0 && sprite_x < pixel_x[screen_x] {
                     out[screen_x] = row[px];
                     out_priority[screen_x] = flags & 0x80 != 0;
+                    out_palette[screen_x]  = flags & 0x10 != 0; // bit 4: 0=OBP0, 1=OBP1
                     pixel_x[screen_x] = sprite_x;
                 }
             }
@@ -285,6 +297,8 @@ impl Renderer {
 
     /// Render a complete scanline to the frame buffer.
     /// Combines background, window, and sprite rendering for a single scanline.
+    /// `window_line` is the PPU's internal window line counter (caller must increment it).
+    /// `bgp`, `obp0`, `obp1` are the current palette register values from io[0x47..=0x49].
     pub fn render_scanline(
         &self,
         frame_buffer: &mut FrameBuffer,
@@ -296,6 +310,10 @@ impl Renderer {
         wx: u8,
         wy: u8,
         oam_bytes: &[u8; 160],
+        window_line: u8,
+        bgp: u8,
+        obp0: u8,
+        obp1: u8,
     ) {
         if !lcdc.is_enabled() {
             return;
@@ -311,26 +329,30 @@ impl Renderer {
         // Window overlay — zero means "no window pixel here"
         let mut window_pixels = [0u8; 160];
         if lcdc.bg_tile_map_display() {
-            self.render_window(bus, scanline_y, lcdc, wx, wy, &mut window_pixels);
+            self.render_window(bus, scanline_y, lcdc, wx, wy, window_line, &mut window_pixels);
         }
 
         // Sprite overlay — zero means "no sprite pixel here"
-        let mut sprite_pixels = [0u8; 160];
-        // true = OAM bit 7 set, sprite renders behind BG/window color indices 1-3
+        let mut sprite_pixels   = [0u8; 160];
         let mut sprite_priority = [false; 160];
-        self.render_sprites(bus, oam_bytes, scanline_y, lcdc, &mut sprite_pixels, &mut sprite_priority);
+        let mut sprite_palette  = [false; 160]; // false=OBP0, true=OBP1
+        self.render_sprites(bus, oam_bytes, scanline_y, lcdc,
+                            &mut sprite_pixels, &mut sprite_priority, &mut sprite_palette);
 
         let y = scanline_y as usize;
         for x in 0..SCREEN_WIDTH {
-            // Resolve the BG+Window color for this pixel (window on top of BG).
-            let bg_win_color = if window_pixels[x] != 0 { window_pixels[x] } else { bg_pixels[x] };
+            // Raw (pre-palette) BG+Window index for priority comparisons.
+            let raw_bg_win = if window_pixels[x] != 0 { window_pixels[x] } else { bg_pixels[x] };
+            // BG+Window colour after BGP mapping.
+            let bg_win_color = Self::apply_palette(bgp, raw_bg_win);
 
             // Sprite compositing:
-            // - color 0 is always transparent.
+            // - index 0 is always transparent (never enters this branch).
             // - OAM bit 7 = 0 (priority): sprite is above BG/window.
-            // - OAM bit 7 = 1 (behind BG): sprite only shows where BG/window = 0.
-            let color = if sprite_pixels[x] != 0 && (!sprite_priority[x] || bg_win_color == 0) {
-                sprite_pixels[x]
+            // - OAM bit 7 = 1 (behind BG): sprite only shows where raw BG/window index = 0.
+            let color = if sprite_pixels[x] != 0 && (!sprite_priority[x] || raw_bg_win == 0) {
+                let obp = if sprite_palette[x] { obp1 } else { obp0 };
+                Self::apply_palette(obp, sprite_pixels[x])
             } else {
                 bg_win_color
             };
@@ -350,9 +372,20 @@ impl Renderer {
         wx: u8,
         wy: u8,
         oam_bytes: &[u8; 160],
+        bgp: u8,
+        obp0: u8,
+        obp1: u8,
     ) {
+        let mut window_line = 0u8;
+        let window_enable = lcdc.bg_tile_map_display() && lcdc.window_display() && wx >= 7;
         for y in 0..SCREEN_HEIGHT {
-            self.render_scanline(frame_buffer, bus, y as u8, lcdc, scroll_x, scroll_y, wx, wy, oam_bytes);
+            let scanline_y = y as u8;
+            self.render_scanline(frame_buffer, bus, scanline_y, lcdc,
+                                 scroll_x, scroll_y, wx, wy, oam_bytes,
+                                 window_line, bgp, obp0, obp1);
+            if window_enable && scanline_y >= wy {
+                window_line = window_line.wrapping_add(1);
+            }
         }
         frame_buffer.mark_frame_ready();
     }

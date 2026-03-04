@@ -89,6 +89,11 @@ pub struct VideoController {
     /// Set to true on the first cycle of VBlank entry (edge-triggered).
     /// Cleared by system.step() after it sets frame_complete.
     pub vblank_entered: bool,
+    /// Internal window line counter. Increments once per scanline where the
+    /// window is actually rendered. Reset to 0 at the start of each frame
+    /// (when LY wraps to 0). Using LY-WY instead of this causes wrong tiles
+    /// whenever the window is toggled or WY changes mid-frame.
+    pub window_line: u8,
 }
 
 impl VideoController {
@@ -111,6 +116,7 @@ impl VideoController {
             frame_buffer: create_shared_frame_buffer(),
             scanline_ready: false,
             vblank_entered: false,
+            window_line: 0,
         }
     }
 
@@ -134,6 +140,7 @@ impl VideoController {
             frame_buffer,
             scanline_ready: false,
             vblank_entered: false,
+            window_line: 0,
         }
     }
 
@@ -256,6 +263,7 @@ impl VideoController {
 
                     if self.ly > 153 {
                         self.ly = 0;
+                        self.window_line = 0; // Reset window line counter for the new frame.
                         self.mode = PpuMode::OamScan;
                         // OAM-scan STAT interrupt for the first line of the new frame.
                         if io[0x41] & 0x20 != 0 {
@@ -333,35 +341,54 @@ impl VideoController {
         Arc::clone(&self.frame_buffer)
     }
 
-    /// Render the current scanline to the frame buffer
-    pub fn render_scanline(&self, bus: &MemoryBus) {
+    /// Render the current scanline to the frame buffer.
+    /// Must be &mut self because we update the window line counter.
+    pub fn render_scanline(&mut self, bus: &MemoryBus) {
         if !self.lcdc.is_enabled() {
             return;
         }
 
-        let mut fb = self.frame_buffer.lock().unwrap();
-
-        // Get control registers from memory
+        let scanline_y = self.ly;
         let scy = self.scy;
         let scx = self.scx;
-        let wy = self.wy;
-        let wx = self.wx;
+        let wy  = self.wy;
+        let wx  = self.wx;
 
-        // Render this scanline
+        // Read palette registers directly from the I/O array.
+        let bgp  = bus.io[0x47];
+        let obp0 = bus.io[0x48];
+        let obp1 = bus.io[0x49];
+
+        let mut fb = self.frame_buffer.lock().unwrap();
+
         self.renderer.render_scanline(
             &mut fb,
             bus,
-            self.ly,
+            scanline_y,
             &self.lcdc,
             scx,
             scy,
             wx,
             wy,
             &bus.oam,
+            self.window_line,
+            bgp,
+            obp0,
+            obp1,
         );
 
+        // The window line counter increments every scanline on which the window
+        // is actually rendered (visible, enabled, and within bounds).
+        let window_visible = self.lcdc.bg_tile_map_display()
+            && self.lcdc.window_display()
+            && scanline_y >= wy
+            && wx >= 7;
+        if window_visible {
+            self.window_line = self.window_line.wrapping_add(1);
+        }
+
         // After the last visible scanline, mark the frame as ready for display.
-        if self.ly == 143 {
+        if scanline_y == 143 {
             fb.mark_frame_ready();
         }
     }
@@ -372,25 +399,26 @@ impl VideoController {
             return;
         }
 
+        let bgp  = bus.io[0x47];
+        let obp0 = bus.io[0x48];
+        let obp1 = bus.io[0x49];
+
         let mut fb = self.frame_buffer.lock().unwrap();
         fb.clear();
 
-        // Render all 144 scanlines
-        for y in 0..144 {
-            self.renderer.render_scanline(
-                &mut fb,
-                bus,
-                y as u8,
-                &self.lcdc,
-                self.scx,
-                self.scy,
-                self.wx,
-                self.wy,
-                &bus.oam,
-            );
-        }
-
-        fb.mark_frame_ready();
+        self.renderer.render_frame(
+            &mut fb,
+            bus,
+            &self.lcdc,
+            self.scx,
+            self.scy,
+            self.wx,
+            self.wy,
+            &bus.oam,
+            bgp,
+            obp0,
+            obp1,
+        );
     }
 }
 
