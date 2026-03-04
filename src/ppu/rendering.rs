@@ -3,8 +3,8 @@
 /// Handles tile rendering, window display, and sprite rendering.
 
 use crate::memory::MemoryBus;
-use crate::ppu::oam::OAM;
 use crate::ppu::video::Lcdc;
+use crate::display::{FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT};
 
 /// Tile data (16 bytes per tile for 8x8 monochrome)
 #[derive(Debug, Clone, Copy)]
@@ -138,31 +138,37 @@ impl Renderer {
     /// Returns sprite pixels and their positions
     pub fn render_sprites(
         &self,
-        oam: &OAM,
+        oam_bytes: &[u8; 160],
         scanline_y: u8,
         lcdc: &Lcdc,
     ) -> Vec<(usize, u8)> {
         let mut sprites = Vec::new();
         let height = lcdc.obj_size();
 
-        for entry in &oam.entries {
-            let y = entry.y;
-            let x = entry.x;
+        // Parse OAM entries from raw bytes
+        for i in 0..40 {
+            let offset = i * 4;
+            if offset + 3 < oam_bytes.len() {
+                let y = oam_bytes[offset];
+                let x = oam_bytes[offset + 1];
+                let tile = oam_bytes[offset + 2];
+                let _flags = oam_bytes[offset + 3];
 
-            // Check if sprite is on this scanline
-            if x < 0x90 && y < 0x90 && scanline_y >= y && scanline_y < y + height as u8 {
-                let tile_row = (scanline_y - y) as usize;
-                let tile = self.get_tile(entry.tile as usize);
+                // Check if sprite is on this scanline
+                if x < 0x90 && y < 0x90 && scanline_y >= y && scanline_y < y + height as u8 {
+                    let tile_row = (scanline_y - y) as usize;
+                    let tile = self.get_tile(tile as usize);
 
-                if let Some(t) = tile {
-                    let pixel_row = self.decode_tile_row(t, tile_row);
+                    if let Some(t) = tile {
+                        let pixel_row = self.decode_tile_row(t, tile_row);
 
-                    for i in 0..8 {
-                        let pixel_x = x as usize + i;
-                        if pixel_x < 160 {
-                            let pixel_val = pixel_row[i];
-                            if pixel_val != 0 {
-                                sprites.push((pixel_x, pixel_val));
+                        for j in 0..8 {
+                            let pixel_x = x as usize + j;
+                            if pixel_x < 160 {
+                                let pixel_val = pixel_row[j];
+                                if pixel_val != 0 {
+                                    sprites.push((pixel_x, pixel_val));
+                                }
                             }
                         }
                     }
@@ -171,6 +177,58 @@ impl Renderer {
         }
 
         sprites
+    }
+
+    /// Render a complete scanline to the frame buffer
+    /// Combines background and sprite rendering for a single scanline
+    pub fn render_scanline(
+        &self,
+        frame_buffer: &mut FrameBuffer,
+        bus: &MemoryBus,
+        scanline_y: u8,
+        lcdc: &Lcdc,
+        scroll_x: u8,
+        scroll_y: u8,
+        oam_bytes: &[u8; 160],
+    ) {
+        if !lcdc.is_enabled() {
+            return;
+        }
+
+        // Get background pixels for this scanline
+        let bg_pixels = self.render_background(bus, scanline_y, lcdc, scroll_x, scroll_y);
+
+        // Write background pixels to frame buffer
+        for x in 0..SCREEN_WIDTH {
+            frame_buffer.set_pixel(x, scanline_y as usize, bg_pixels[x]);
+        }
+
+        // Get sprite pixels for this scanline
+        let sprites = self.render_sprites(oam_bytes, scanline_y, lcdc);
+
+        // Draw sprites on top of background (sprites have priority)
+        for (sprite_x, sprite_color) in sprites {
+            if sprite_x < SCREEN_WIDTH {
+                frame_buffer.set_pixel(sprite_x, scanline_y as usize, sprite_color);
+            }
+        }
+    }
+
+    /// Render the entire frame to a frame buffer
+    /// This is a simplified version that renders all 144 scanlines
+    pub fn render_frame(
+        &self,
+        frame_buffer: &mut FrameBuffer,
+        bus: &MemoryBus,
+        lcdc: &Lcdc,
+        scroll_x: u8,
+        scroll_y: u8,
+        oam_bytes: &[u8; 160],
+    ) {
+        for y in 0..SCREEN_HEIGHT {
+            self.render_scanline(frame_buffer, bus, y as u8, lcdc, scroll_x, scroll_y, oam_bytes);
+        }
+        frame_buffer.mark_frame_ready();
     }
 }
 

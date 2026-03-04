@@ -5,6 +5,7 @@
 //! and all standard peripherals.
 
 pub mod cpu;
+pub mod display;
 pub mod memory;
 pub mod ppu;
 pub mod audio;

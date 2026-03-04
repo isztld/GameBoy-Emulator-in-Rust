@@ -4,6 +4,9 @@
 /// and display generation.
 
 use crate::memory::MemoryBus;
+use crate::ppu::rendering::Renderer;
+use crate::display::{SharedFrameBuffer, create_shared_frame_buffer};
+use std::sync::Arc;
 
 /// PPU Mode
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,6 +75,12 @@ pub struct VideoController {
     pub dma: u8,         // OAM DMA source
     pub oam_dma_active: bool,
     pub oam_dma_address: u16,
+    // Rendering components
+    pub renderer: Renderer,
+    pub frame_buffer: SharedFrameBuffer,
+    /// Set to true when PixelTransfer→HBlank transition occurs;
+    /// system.step() renders the scanline then clears this flag.
+    pub scanline_ready: bool,
 }
 
 impl VideoController {
@@ -90,6 +99,31 @@ impl VideoController {
             dma: 0,
             oam_dma_active: false,
             oam_dma_address: 0,
+            renderer: Renderer::new(),
+            frame_buffer: create_shared_frame_buffer(),
+            scanline_ready: false,
+        }
+    }
+
+    /// Create a new VideoController with a shared frame buffer
+    pub fn with_frame_buffer(frame_buffer: SharedFrameBuffer) -> Self {
+        VideoController {
+            mode: PpuMode::OamScan,
+            mode_clock: 0,
+            ly: 0,
+            lyc: 0,
+            lcdc: Lcdc::new(0x91),
+            stat: 0x85,
+            scy: 0,
+            scx: 0,
+            wy: 0,
+            wx: 0,
+            dma: 0,
+            oam_dma_active: false,
+            oam_dma_address: 0,
+            renderer: Renderer::new(),
+            frame_buffer,
+            scanline_ready: false,
         }
     }
 
@@ -150,6 +184,7 @@ impl VideoController {
                 if self.mode_clock >= 43 {
                     self.mode_clock = 0;
                     self.mode = PpuMode::HBlank;
+                    self.scanline_ready = true;
                 }
             }
             PpuMode::HBlank => {
@@ -235,6 +270,65 @@ impl VideoController {
     /// Get current LY (Y coordinate)
     pub fn get_ly(&self) -> u8 {
         self.ly
+    }
+
+    /// Get the frame buffer
+    pub fn get_frame_buffer(&self) -> SharedFrameBuffer {
+        Arc::clone(&self.frame_buffer)
+    }
+
+    /// Render the current scanline to the frame buffer
+    pub fn render_scanline(&self, bus: &MemoryBus) {
+        if !self.lcdc.is_enabled() {
+            return;
+        }
+
+        let mut fb = self.frame_buffer.lock().unwrap();
+
+        // Get control registers from memory
+        let scy = self.scy;
+        let scx = self.scx;
+
+        // Render this scanline
+        self.renderer.render_scanline(
+            &mut fb,
+            bus,
+            self.ly,
+            &self.lcdc,
+            scx,
+            scy,
+            &bus.oam,
+        );
+
+        // After the last visible scanline, mark the frame as ready for display.
+        if self.ly == 143 {
+            fb.mark_frame_ready();
+        }
+    }
+
+    /// Render a complete frame to the frame buffer
+    pub fn render_frame(&self, bus: &MemoryBus) {
+        if !self.lcdc.is_enabled() {
+            return;
+        }
+
+        let mut fb = self.frame_buffer.lock().unwrap();
+        fb.clear();
+
+        // Render all 144 scanlines
+        for y in 0..144 {
+            self.renderer.render_scanline(
+                &mut fb,
+                bus,
+                y as u8,
+                &self.lcdc,
+                self.scx,
+                self.scy,
+                &bus.oam,
+            );
+        }
+
+        fb.mark_frame_ready();
     }
 }
 

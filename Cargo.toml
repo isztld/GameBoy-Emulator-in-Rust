@@ -3,6 +3,32 @@ name = "gb_emu"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "lcd_display"
+path = "src/bin/lcd_display.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# Metal rendering
+metal = "0.28"
+raw-window-handle = "0.6"
+
+# ImGui - using imgui 0.11 which has built-in macro support
+imgui = "0.12"
+
+# macOS specific
+cocoa = "0.25"
+objc = "0.2"
+winit = "0.30"
+imgui-wgpu = "0.25"
+imgui-winit-support = "0.13"
+wgpu = "25"
+pollster = "0.4.0"
+bytemuck = "1.25.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.28"
+objc = "0.2"
+cocoa = "0.25"

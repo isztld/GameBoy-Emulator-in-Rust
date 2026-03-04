@@ -8,13 +8,14 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-pub use crate::cpu::{CPU, CPUState};
-pub use crate::memory::MemoryBus;
-pub use crate::ppu::video::VideoController;
-pub use crate::audio::apu::AudioProcessor;
-pub use crate::timer::Timer;
-pub use crate::input::joypad::Joypad;
-pub use crate::config::EmulatorFlags;
+use crate::cpu::{CPU, CPUState};
+use crate::memory::MemoryBus;
+use crate::ppu::video::VideoController;
+use crate::audio::apu::AudioProcessor;
+use crate::timer::Timer;
+use crate::input::joypad::Joypad;
+use crate::config::EmulatorFlags;
+use crate::display::SharedFrameBuffer;
 
 pub struct System {
     pub cpu: CPU,
@@ -29,6 +30,8 @@ pub struct System {
     /// Optional hard cap on machine cycles; step() stops the system when reached.
     pub cycle_limit: Option<u64>,
     pub cpu_log_file: Option<Arc<Mutex<std::fs::File>>>,
+    #[allow(dead_code)]
+    frame_buffer: SharedFrameBuffer,
 }
 
 impl System {
@@ -73,6 +76,7 @@ impl System {
             total_cycles: 0,
             cycle_limit: flags.cycle_limit,
             cpu_log_file,
+            frame_buffer: crate::display::create_shared_frame_buffer(),
         };
         system.reset();
         system
@@ -132,6 +136,12 @@ impl System {
         // we approximate as instant).  The per-cycle PPU state machine has
         // already been driven by tick_io() in the closure above.
         self.ppu.handle_oam_dma(&mut self.mmu);
+
+        // Render the current scanline when the PPU signals HBlank entry.
+        if self.ppu.scanline_ready {
+            self.ppu.render_scanline(&self.mmu);
+            self.ppu.scanline_ready = false;
+        }
 
         // Sync PPU's LY and STAT to MMU I/O so CPU reads see current values.
         self.mmu.update_ly(self.ppu.get_ly());
@@ -242,6 +252,11 @@ impl System {
 
     pub fn get_audio_output(&self) -> crate::audio::apu::AudioOutput {
         self.apu.get_output()
+    }
+
+    /// Get the shared frame buffer
+    pub fn get_frame_buffer(&self) -> SharedFrameBuffer {
+        self.ppu.get_frame_buffer()
     }
 }
 
