@@ -270,6 +270,7 @@ mod tests {
         timer.write_tac(0x04);
         timer.write_tma(0x42);
         timer.tima = 0xFF;
+        io[0x05] = 0xFF; // keep io in sync with direct field assignment
         timer.tima_counter = 255;
 
         timer.tick(&mut io);
