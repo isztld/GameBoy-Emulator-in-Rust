@@ -169,13 +169,15 @@ impl Renderer {
             return;
         }
 
-        // Window X position: the left edge of the window is at screen X = wx - 7
-        // A window with wx=0 or wx <= 7 is hidden (off-screen to the left)
-        if wx <= 7 {
+        // Window X position: the left edge of the window is at screen X = wx - 7.
+        // wx < 7 means the window is fully off-screen to the left; wx=7 is valid
+        // and places the window starting at screen x=0.
+        if wx < 7 {
             return;
         }
 
-        let tile_map_vram_base: usize = if lcdc.tile_map_select() { 0x1C00 } else { 0x1800 };
+        // Window uses bit 6 of LCDC (window_tile_map_select), not bit 3 (bg tile map).
+        let tile_map_vram_base: usize = if lcdc.window_tile_map_select() { 0x1C00 } else { 0x1800 };
         let tile_data_select = lcdc.tile_data_select();
 
         // Window scanline within the window (0-159)
@@ -209,7 +211,9 @@ impl Renderer {
     }
 
     /// Render sprites for a scanline into a fixed-size overlay buffer.
-    /// `out[x]` is non-zero where a sprite pixel should overwrite the background.
+    /// `out[x]` is non-zero where a sprite pixel should be drawn.
+    /// `out_priority[x]` is true when OAM flag bit 7 is set (sprite behind BG).
+    /// Lower OAM index wins when sprites overlap (first sprite in OAM has priority).
     /// Uses direct VRAM access; no heap allocation.
     pub fn render_sprites(
         &self,
@@ -218,6 +222,7 @@ impl Renderer {
         scanline_y: u8,
         lcdc: &Lcdc,
         out: &mut [u8; 160],
+        out_priority: &mut [bool; 160],
     ) {
         if !lcdc.obj_display() {
             return;
@@ -264,8 +269,11 @@ impl Renderer {
 
             for px in 0..8usize {
                 let screen_x = (sprite_x as usize + px).wrapping_sub(8);
-                if screen_x < 160 && row[px] != 0 {
+                // Only write if the pixel is opaque and no earlier sprite already
+                // claimed this position (lower OAM index has priority on DMG).
+                if screen_x < 160 && row[px] != 0 && out[screen_x] == 0 {
                     out[screen_x] = row[px];
+                    out_priority[screen_x] = flags & 0x80 != 0;
                 }
             }
         }
@@ -289,26 +297,38 @@ impl Renderer {
             return;
         }
 
-        let bg_pixels = self.render_background(bus, scanline_y, lcdc, scroll_x, scroll_y);
+        // When LCDC bit 0 is clear the BG and Window are disabled (all white/0).
+        let bg_pixels = if lcdc.bg_tile_map_display() {
+            self.render_background(bus, scanline_y, lcdc, scroll_x, scroll_y)
+        } else {
+            [0u8; 160]
+        };
 
         // Window overlay — zero means "no window pixel here"
         let mut window_pixels = [0u8; 160];
-        self.render_window(bus, scanline_y, lcdc, wx, wy, &mut window_pixels);
+        if lcdc.bg_tile_map_display() {
+            self.render_window(bus, scanline_y, lcdc, wx, wy, &mut window_pixels);
+        }
 
         // Sprite overlay — zero means "no sprite pixel here"
         let mut sprite_pixels = [0u8; 160];
-        self.render_sprites(bus, oam_bytes, scanline_y, lcdc, &mut sprite_pixels);
+        // true = OAM bit 7 set, sprite renders behind BG/window color indices 1-3
+        let mut sprite_priority = [false; 160];
+        self.render_sprites(bus, oam_bytes, scanline_y, lcdc, &mut sprite_pixels, &mut sprite_priority);
 
         let y = scanline_y as usize;
         for x in 0..SCREEN_WIDTH {
-            // Layer priority: sprites can override window or background
-            // (full sprite priority handling requires checking OAM bit 7)
-            let color = if sprite_pixels[x] != 0 {
+            // Resolve the BG+Window color for this pixel (window on top of BG).
+            let bg_win_color = if window_pixels[x] != 0 { window_pixels[x] } else { bg_pixels[x] };
+
+            // Sprite compositing:
+            // - color 0 is always transparent.
+            // - OAM bit 7 = 0 (priority): sprite is above BG/window.
+            // - OAM bit 7 = 1 (behind BG): sprite only shows where BG/window = 0.
+            let color = if sprite_pixels[x] != 0 && (!sprite_priority[x] || bg_win_color == 0) {
                 sprite_pixels[x]
-            } else if window_pixels[x] != 0 {
-                window_pixels[x]
             } else {
-                bg_pixels[x]
+                bg_win_color
             };
             frame_buffer.set_pixel(x, y, color);
         }
