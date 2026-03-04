@@ -29,6 +29,9 @@ const GB_W: f32 = SCREEN_WIDTH as f32 * SCALE as f32;
 const GB_H: f32 = SCREEN_HEIGHT as f32 * SCALE as f32;
 const TITLE_BAR_H: f32 = 19.0; // imgui default title bar height
 
+/// GB native frame duration: 70224 T-cycles / 4194304 Hz ≈ 16.742ms
+const GB_FRAME_DURATION: Duration = Duration::from_nanos(16_742_706);
+
 struct EmulatorState {
     system: System,
     frame_buffer: SharedFrameBuffer,
@@ -36,6 +39,8 @@ struct EmulatorState {
     fps_timer: Instant,
     current_fps: f32,
     total_frames: u64,
+    /// Tracks when the last emulator frame was advanced, for speed throttling.
+    last_emu_advance: Instant,
 }
 
 struct ImguiState {
@@ -130,6 +135,7 @@ impl AppWindow {
             fps_timer: Instant::now(),
             current_fps: 0.0,
             total_frames: 0,
+            last_emu_advance: Instant::now(),
         };
 
         let mut app = Self {
@@ -254,12 +260,22 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                // ── step emulator one full frame ─────────────────────────────
-                if app.emu.system.is_running() {
-                    app.emu.system.run_frame();
-                } else {
-                    event_loop.exit();
-                    return;
+                // ── advance emulator at GB native speed (~59.73 fps) ─────────
+                let now = Instant::now();
+                let elapsed = now.duration_since(app.emu.last_emu_advance);
+                if elapsed >= GB_FRAME_DURATION {
+                    // Clamp to at most 4 catch-up frames to avoid spiral of
+                    // death after a temporary stall (e.g. window drag).
+                    let frames = (elapsed.as_nanos() / GB_FRAME_DURATION.as_nanos()).min(4);
+                    app.emu.last_emu_advance += GB_FRAME_DURATION * frames as u32;
+
+                    if !app.emu.system.is_running() {
+                        event_loop.exit();
+                        return;
+                    }
+                    for _ in 0..frames {
+                        app.emu.system.run_frame();
+                    }
                 }
 
                 // ── update GB screen texture when a frame is ready ───────────
