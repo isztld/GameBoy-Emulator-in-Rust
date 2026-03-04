@@ -152,6 +152,62 @@ impl Renderer {
         pixels
     }
 
+    /// Render the window overlay for a scanline.
+    /// Window pixels are non-zero where the window should be drawn.
+    /// Window rendering is similar to background but starts from window position.
+    pub fn render_window(
+        &self,
+        bus: &MemoryBus,
+        scanline_y: u8,
+        lcdc: &Lcdc,
+        wx: u8,
+        wy: u8,
+        out: &mut [u8; 160],
+    ) {
+        // Window must be enabled and scanline must be at or below window Y
+        if !lcdc.window_display() || scanline_y < wy {
+            return;
+        }
+
+        // Window X position: the left edge of the window is at screen X = wx - 7
+        // A window with wx=0 or wx <= 7 is hidden (off-screen to the left)
+        if wx <= 7 {
+            return;
+        }
+
+        let tile_map_vram_base: usize = if lcdc.tile_map_select() { 0x1C00 } else { 0x1800 };
+        let tile_data_select = lcdc.tile_data_select();
+
+        // Window scanline within the window (0-159)
+        let window_y = (scanline_y - wy) as usize;
+        let tile_row = window_y % 8;
+        let tile_map_row = (window_y / 8) % 32;
+
+        // Cache the decoded pixel row
+        let mut cached_tile_x = usize::MAX;
+        let mut cached_row = [0u8; 8];
+
+        // Window starts at screen X = wx - 7
+        let window_start_x = (wx as usize) - 7;
+
+        for screen_x in window_start_x..SCREEN_WIDTH {
+            let window_x = screen_x - window_start_x;
+            let tile_map_col = (window_x / 8) % 32;
+
+            if tile_map_col != cached_tile_x {
+                let map_offset = tile_map_vram_base + tile_map_row * 32 + tile_map_col;
+                let raw_index = bus.vram[map_offset];
+                let data_offset = Self::tile_row_vram_offset(raw_index, tile_row, tile_data_select);
+                let lsb = bus.vram[data_offset];
+                let msb = bus.vram[data_offset + 1];
+                cached_row = Self::decode_bitplanes(lsb, msb);
+                cached_tile_x = tile_map_col;
+            }
+
+            out[screen_x] = cached_row[window_x % 8];
+        }
+    }
+
     /// Render sprites for a scanline into a fixed-size overlay buffer.
     /// `out[x]` is non-zero where a sprite pixel should overwrite the background.
     /// Uses direct VRAM access; no heap allocation.
@@ -216,7 +272,7 @@ impl Renderer {
     }
 
     /// Render a complete scanline to the frame buffer.
-    /// Combines background and sprite rendering for a single scanline.
+    /// Combines background, window, and sprite rendering for a single scanline.
     pub fn render_scanline(
         &self,
         frame_buffer: &mut FrameBuffer,
@@ -225,6 +281,8 @@ impl Renderer {
         lcdc: &Lcdc,
         scroll_x: u8,
         scroll_y: u8,
+        wx: u8,
+        wy: u8,
         oam_bytes: &[u8; 160],
     ) {
         if !lcdc.is_enabled() {
@@ -233,13 +291,25 @@ impl Renderer {
 
         let bg_pixels = self.render_background(bus, scanline_y, lcdc, scroll_x, scroll_y);
 
+        // Window overlay — zero means "no window pixel here"
+        let mut window_pixels = [0u8; 160];
+        self.render_window(bus, scanline_y, lcdc, wx, wy, &mut window_pixels);
+
         // Sprite overlay — zero means "no sprite pixel here"
         let mut sprite_pixels = [0u8; 160];
         self.render_sprites(bus, oam_bytes, scanline_y, lcdc, &mut sprite_pixels);
 
         let y = scanline_y as usize;
         for x in 0..SCREEN_WIDTH {
-            let color = if sprite_pixels[x] != 0 { sprite_pixels[x] } else { bg_pixels[x] };
+            // Layer priority: sprites can override window or background
+            // (full sprite priority handling requires checking OAM bit 7)
+            let color = if sprite_pixels[x] != 0 {
+                sprite_pixels[x]
+            } else if window_pixels[x] != 0 {
+                window_pixels[x]
+            } else {
+                bg_pixels[x]
+            };
             frame_buffer.set_pixel(x, y, color);
         }
     }
@@ -253,10 +323,12 @@ impl Renderer {
         lcdc: &Lcdc,
         scroll_x: u8,
         scroll_y: u8,
+        wx: u8,
+        wy: u8,
         oam_bytes: &[u8; 160],
     ) {
         for y in 0..SCREEN_HEIGHT {
-            self.render_scanline(frame_buffer, bus, y as u8, lcdc, scroll_x, scroll_y, oam_bytes);
+            self.render_scanline(frame_buffer, bus, y as u8, lcdc, scroll_x, scroll_y, wx, wy, oam_bytes);
         }
         frame_buffer.mark_frame_ready();
     }

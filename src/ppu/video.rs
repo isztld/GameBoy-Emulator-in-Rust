@@ -154,6 +154,8 @@ impl VideoController {
         self.lcdc = Lcdc::new(io[0x40]);
         self.scy = io[0x42];
         self.scx = io[0x43];
+        self.wy = io[0x4A]; // Window Y
+        self.wx = io[0x4B]; // Window X
 
         self.advance_mode(io);
         self.update_stat();
@@ -309,6 +311,8 @@ impl VideoController {
         // Get control registers from memory
         let scy = self.scy;
         let scx = self.scx;
+        let wy = self.wy;
+        let wx = self.wx;
 
         // Render this scanline
         self.renderer.render_scanline(
@@ -318,6 +322,8 @@ impl VideoController {
             &self.lcdc,
             scx,
             scy,
+            wx,
+            wy,
             &bus.oam,
         );
 
@@ -345,6 +351,8 @@ impl VideoController {
                 &self.lcdc,
                 self.scx,
                 self.scy,
+                self.wx,
+                self.wy,
                 &bus.oam,
             );
         }
