@@ -21,6 +21,7 @@ use winit::{
 
 use gb_emu::{EmulatorFlags, System};
 use gb_emu::display::{SharedFrameBuffer, SCREEN_HEIGHT, SCREEN_WIDTH};
+use gb_emu::input::joypad::Button;
 
 const SCALE: u32 = 3;
 const INFO_PANEL_WIDTH: f32 = 220.0;
@@ -222,9 +223,33 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput { event: key_event, .. } => {
-                if let Key::Named(NamedKey::Escape) = key_event.logical_key {
-                    if key_event.state.is_pressed() {
-                        event_loop.exit();
+                let pressed = key_event.state.is_pressed();
+
+                // Map keyboard → GB button, then press or release
+                let gb_button: Option<Button> = match &key_event.logical_key {
+                    Key::Named(NamedKey::Escape) => {
+                        if pressed { event_loop.exit(); }
+                        None
+                    }
+                    Key::Named(NamedKey::ArrowUp)    => Some(Button::Up),
+                    Key::Named(NamedKey::ArrowDown)  => Some(Button::Down),
+                    Key::Named(NamedKey::ArrowLeft)  => Some(Button::Left),
+                    Key::Named(NamedKey::ArrowRight) => Some(Button::Right),
+                    Key::Named(NamedKey::Enter)      => Some(Button::Start),
+                    Key::Named(NamedKey::Backspace)  => Some(Button::Select),
+                    Key::Character(ch) => match ch.as_str() {
+                        "z" | "Z" => Some(Button::A),
+                        "x" | "X" => Some(Button::B),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+
+                if let Some(btn) = gb_button {
+                    if pressed {
+                        app.emu.system.press_button(btn);
+                    } else {
+                        app.emu.system.release_button(btn);
                     }
                 }
             }

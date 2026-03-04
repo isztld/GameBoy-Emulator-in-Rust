@@ -43,6 +43,11 @@ pub struct MemoryBus {
     pub timer_tima_write: Option<u8>,
     pub timer_tma_write: Option<u8>,
     pub timer_tac_write: Option<u8>,
+
+    /// Action button states (1=pressed): bit0=A, bit1=B, bit2=Select, bit3=Start
+    pub joypad_action: u8,
+    /// D-pad states (1=pressed): bit0=Right, bit1=Left, bit2=Up, bit3=Down
+    pub joypad_dpad: u8,
 }
 
 // Global serial log file for output (using Arc<Mutex<File>> for sharing)
@@ -137,6 +142,8 @@ impl MemoryBus {
             timer_tima_write: None,
             timer_tma_write: None,
             timer_tac_write: None,
+            joypad_action: 0,
+            joypad_dpad: 0,
         }
     }
 
@@ -213,6 +220,7 @@ impl MemoryBus {
             0x00 => {
                 // P1/JOYP: bits 4-5 writable (select lines); bits 6-7 preserved; bits 0-3 read-only (inputs).
                 self.io[offset] = (self.io[offset] & 0xCF) | (value & 0x30);
+                self.update_joypad_io();
             }
             0x01 => {
                 // SB — serial transfer data.
@@ -307,6 +315,28 @@ impl MemoryBus {
     /// Return a reference to the full ROM slice.
     pub fn get_rom(&self) -> &[u8] {
         &self.rom
+    }
+
+    /// Recompute the lower 4 bits of io[0x00] from the current button states
+    /// and the select lines (bits 4-5). Must be called after any button state
+    /// change or after a write to 0xFF00.
+    pub fn update_joypad_io(&mut self) {
+        let select = self.io[0x00] & 0x30;
+        let p14 = select & 0x10 == 0; // bit 4 low → d-pad selected
+        let p15 = select & 0x20 == 0; // bit 5 low → action buttons selected
+
+        // GB convention: 0 = pressed on the wire, so invert the pressed bits.
+        let dpad_lines   = (!self.joypad_dpad)   & 0x0F;
+        let action_lines = (!self.joypad_action) & 0x0F;
+
+        let input_lines = match (p14, p15) {
+            (true,  true)  => dpad_lines & action_lines,
+            (true,  false) => dpad_lines,
+            (false, true)  => action_lines,
+            (false, false) => 0x0F, // neither group selected → all high
+        };
+
+        self.io[0x00] = (self.io[0x00] & 0xF0) | (input_lines & 0x0F);
     }
 
     /// Update the LY I/O register from PPU value

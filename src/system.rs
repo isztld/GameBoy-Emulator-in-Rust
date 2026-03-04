@@ -13,7 +13,7 @@ use crate::memory::MemoryBus;
 use crate::ppu::video::VideoController;
 use crate::audio::apu::AudioProcessor;
 use crate::timer::Timer;
-use crate::input::joypad::Joypad;
+use crate::input::joypad::{Button, Joypad};
 use crate::config::EmulatorFlags;
 use crate::display::SharedFrameBuffer;
 
@@ -249,6 +249,34 @@ impl System {
 
     pub fn cpu_state(&self) -> &CPUState {
         self.cpu.state()
+    }
+
+    pub fn press_button(&mut self, button: Button) {
+        match button {
+            Button::A      => self.mmu.joypad_action |= 0x01,
+            Button::B      => self.mmu.joypad_action |= 0x02,
+            Button::Select => self.mmu.joypad_action |= 0x04,
+            Button::Start  => self.mmu.joypad_action |= 0x08,
+            Button::Right  => self.mmu.joypad_dpad   |= 0x01,
+            Button::Left   => self.mmu.joypad_dpad   |= 0x02,
+            Button::Up     => self.mmu.joypad_dpad   |= 0x04,
+            Button::Down   => self.mmu.joypad_dpad   |= 0x08,
+        }
+        self.mmu.update_joypad_io();
+    }
+
+    pub fn release_button(&mut self, button: Button) {
+        match button {
+            Button::A      => self.mmu.joypad_action &= !0x01,
+            Button::B      => self.mmu.joypad_action &= !0x02,
+            Button::Select => self.mmu.joypad_action &= !0x04,
+            Button::Start  => self.mmu.joypad_action &= !0x08,
+            Button::Right  => self.mmu.joypad_dpad   &= !0x01,
+            Button::Left   => self.mmu.joypad_dpad   &= !0x02,
+            Button::Up     => self.mmu.joypad_dpad   &= !0x04,
+            Button::Down   => self.mmu.joypad_dpad   &= !0x08,
+        }
+        self.mmu.update_joypad_io();
     }
 
     pub fn get_audio_output(&self) -> crate::audio::apu::AudioOutput {
