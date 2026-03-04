@@ -74,7 +74,7 @@ impl CPU {
         }
 
         if self.state.ime && pending != 0 {
-            let cycles = self.service_interrupt(bus, pending);
+            let cycles = self.service_interrupt(bus, pending, tick);
             self.cycles += cycles as u64;
             return cycles;
         }
@@ -91,6 +91,9 @@ impl CPU {
         // --- HALT / STOP ------------------------------------------------------
         if self.halted || self.stopped {
             // Spin for 1 machine cycle, waiting for an interrupt to arrive.
+            // The tick must fire so that the timer (and PPU) advance during HALT;
+            // without it the timer interrupt would never arrive to wake the CPU.
+            tick(&mut bus.io);
             self.cycles += 1;
             return 1;
         }
@@ -98,6 +101,10 @@ impl CPU {
         // --- Normal instruction fetch / decode / execute ----------------------
         let pc = self.state.registers.pc;
         let opcode = bus.read(pc);
+        // M-cycle 1: opcode fetch.  Every instruction pays this cost; the exec
+        // sub-functions only tick for the *additional* M-cycles (immediate reads,
+        // memory accesses, internal delays), so we must tick once here.
+        tick(&mut bus.io);
         let (instruction, opcode_bytes) = decode_instruction(&self.state, bus, pc, opcode);
 
         // Advance PC past this instruction before executing, so that relative
@@ -138,7 +145,7 @@ impl CPU {
     /// Service the highest-priority pending interrupt.
     /// Clears the interrupt bit in IF, disables IME, and pushes PC onto the stack.
     /// Returns the number of machine cycles consumed (5).
-    fn service_interrupt(&mut self, bus: &mut MemoryBus, pending: u8) -> u32 {
+    fn service_interrupt(&mut self, bus: &mut MemoryBus, pending: u8, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
         self.state.ime = false;
 
         // Find the highest-priority interrupt (lowest bit number).
@@ -158,17 +165,20 @@ impl CPU {
         let if_val = bus.read(0xFF0F);
         bus.write(0xFF0F, if_val & !bit);
 
-        // Push current PC onto the stack (2 machine cycles).
+        // Tick peripherals for each of the 5 M-cycles of interrupt dispatch:
+        // 2 internal NOP cycles, push PC high, push PC low, set PC.
+        tick(&mut bus.io); // M1: internal
+        tick(&mut bus.io); // M2: internal
         let pc = self.state.registers.pc;
         let sp = self.state.registers.sp;
         bus.write(sp.wrapping_sub(1), (pc >> 8) as u8);
+        tick(&mut bus.io); // M3: push PC high
         bus.write(sp.wrapping_sub(2), (pc & 0xFF) as u8);
+        tick(&mut bus.io); // M4: push PC low
         self.state.registers.sp = sp.wrapping_sub(2);
-
-        // Jump to interrupt vector.
         self.state.registers.pc = vector;
+        tick(&mut bus.io); // M5: set PC
 
-        // ISR dispatch takes 5 machine cycles total.
         5
     }
 }
