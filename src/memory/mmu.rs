@@ -228,13 +228,25 @@ impl MemoryBus {
             }
             0x02 => {
                 // SC — serial transfer control.
-                // Bit 7 = transfer start; clear it immediately (transfer is "instant" here).
-                self.io[offset] = value & 0x7F;
-                if value & 0x80 != 0 {
+                // Bit 7 = transfer start, bit 0 = clock select (1=internal, 0=external).
+                // Only auto-complete transfers driven by the internal clock (bit 0 = 1).
+                // External-clock transfers wait for a remote device and never complete
+                // in a standalone emulator — triggering the interrupt would make games
+                // think a link-cable partner responded.
+                let start          = value & 0x80 != 0;
+                let internal_clock = value & 0x01 != 0;
+                if start && internal_clock {
+                    // Complete instantly: output the byte, fill SB with 0xFF (no device),
+                    // clear the transfer-start bit, and fire the serial interrupt.
                     let data = self.io[0x01];
-                    MemoryBus::write_serial_byte(data as u8);
-                    // Fire serial transfer complete interrupt (IF bit 3)
+                    MemoryBus::write_serial_byte(data);
+                    self.io[0x01] = 0xFF; // received byte from absent partner
+                    self.io[offset] = value & 0x7F; // clear bit 7 (transfer done)
                     self.io[0x0F] = 0xE0 | ((self.io[0x0F] | 0x08) & 0x1F);
+                } else {
+                    // External clock or no start: just store SC as-is (bit 7 stays set,
+                    // transfer is pending and will never complete without a real partner).
+                    self.io[offset] = value;
                 }
             }
             0x04 => {
