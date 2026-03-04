@@ -43,6 +43,16 @@ fn parse_flags() -> (EmulatorFlags, String, bool) {
                     flags.log_serial_file = args[i].clone();
                 }
             }
+            "--cpu-json-test" => {
+                flags.cpu_json_test = true;
+                if i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                    i += 1;
+                    flags.cpu_json_test_dir = Some(args[i].clone());
+                } else {
+                    eprintln!("--cpu-json-test requires string path to GameboyCPUTests/");
+                    std::process::exit(1);
+                }
+            }
             "--disasm" => {
                 disassemble = true;
             }
@@ -75,6 +85,10 @@ fn parse_flags() -> (EmulatorFlags, String, bool) {
         i += 1;
     }
 
+    if flags.cpu_json_test {
+        return (flags, "".to_string(), disassemble)
+    }
+
     if i >= args.len() {
         eprintln!("Usage: {} <rom_file>", args[0]);
         std::process::exit(1);
@@ -86,6 +100,39 @@ fn parse_flags() -> (EmulatorFlags, String, bool) {
 
 fn main() {
     let (flags, rom_path, disassemble) = parse_flags();
+
+    if flags.cpu_json_test && let Some(cpu_json_test_dir) = &flags.cpu_json_test_dir {
+        use cpu::run_all_tests;
+
+        println!("Loading tests from: {}", cpu_json_test_dir);
+        let start_time = std::time::Instant::now();
+
+        let (passed, failed, failures) = run_all_tests(cpu_json_test_dir);
+
+        let duration = start_time.elapsed();
+        println!("\n=== Test Results ===");
+        println!("Total: {}", passed + failed);
+        println!("Passed: {}", passed);
+        println!("Failed: {}", failed);
+        println!("Time: {:.2?}", duration);
+
+        if failed > 0 {
+            println!("\n=== Failures ===");
+            for failure in failures.iter().take(20) {
+                println!("{}", failure);
+            }
+            if failures.len() > 20 {
+                println!("... and {} more failures", failures.len() - 20);
+            }
+            std::process::exit(1);
+        } else {
+            println!("\nAll tests passed!");
+            std::process::exit(0);
+        }
+    }else if flags.cpu_json_test {
+        eprintln!("cpu_json_test_dir was not set");
+        std::process::exit(1);
+    }
 
     // Load ROM
     let rom_data = match load_rom(&rom_path) {
