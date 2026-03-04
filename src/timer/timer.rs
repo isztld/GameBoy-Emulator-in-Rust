@@ -97,6 +97,13 @@ impl Timer {
             return;
         }
 
+        // If the CPU wrote to TIMA (0xFF05) mid-instruction, io[0x05] will differ
+        // from self.tima.  Honour that write now so that the timer counts from
+        // the CPU-written value rather than the stale internal copy.
+        if io[0x05] != self.tima {
+            self.tima = io[0x05];
+        }
+
         self.tima_counter += 1;
         if self.tima_counter >= self.tac.tima_period() {
             self.tima_counter = 0;

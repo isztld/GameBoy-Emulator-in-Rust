@@ -98,18 +98,18 @@ pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryB
 
 /// Execute RET cc
 pub fn exec_ret_cond(cpu_state: &mut CPUState, cond: Condition, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // condition check (M-cycle 2) — paid by both taken and not-taken
     if cond_condition(cpu_state, cond) {
         let sp = cpu_state.registers.sp;
         let low = bus.read(sp);
-        tick(&mut bus.io);
+        tick(&mut bus.io); // read SP low
         let high = bus.read(sp.wrapping_add(1));
-        tick(&mut bus.io);
+        tick(&mut bus.io); // read SP high
         cpu_state.registers.sp = sp.wrapping_add(2);
         cpu_state.registers.pc = ((high as u16) << 8) | (low as u16);
         tick(&mut bus.io); // internal delay
         5
     } else {
-        tick(&mut bus.io); // internal delay for condition check
         2
     }
 }

@@ -144,9 +144,9 @@ impl System {
             self.timer.write_div();
             self.mmu.timer_div_reset = false;
         }
-        if let Some(v) = self.mmu.timer_tima_write.take() {
-            self.timer.write_tima(v);
-        }
+        // TIMA writes (0xFF05) are honoured immediately by timer.tick() via the
+        // io[0x05] sync, so no deferred apply is needed here.
+        let _ = self.mmu.timer_tima_write.take();
         if let Some(v) = self.mmu.timer_tma_write.take() {
             self.timer.write_tma(v);
         }
