@@ -217,10 +217,11 @@ impl System {
         }
         } // end !was_spinning
 
-        // VBlank is signalled by bit 0 of IF being set by the PPU.
-        // We check after all ticks so the flag is visible this same step.
-        if self.mmu.read(0xFF0F) & 0x01 != 0 {
+        // VBlank is edge-triggered: set frame_complete only when the PPU
+        // first enters VBlank (not on every cycle while IF bit 0 stays set).
+        if self.ppu.vblank_entered {
             self.frame_complete = true;
+            self.ppu.vblank_entered = false;
         }
 
         self.total_cycles += machine_cycles as u64;

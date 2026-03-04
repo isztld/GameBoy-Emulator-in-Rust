@@ -81,6 +81,9 @@ pub struct VideoController {
     /// Set to true when PixelTransfer→HBlank transition occurs;
     /// system.step() renders the scanline then clears this flag.
     pub scanline_ready: bool,
+    /// Set to true on the first cycle of VBlank entry (edge-triggered).
+    /// Cleared by system.step() after it sets frame_complete.
+    pub vblank_entered: bool,
 }
 
 impl VideoController {
@@ -102,6 +105,7 @@ impl VideoController {
             renderer: Renderer::new(),
             frame_buffer: create_shared_frame_buffer(),
             scanline_ready: false,
+            vblank_entered: false,
         }
     }
 
@@ -124,6 +128,7 @@ impl VideoController {
             renderer: Renderer::new(),
             frame_buffer,
             scanline_ready: false,
+            vblank_entered: false,
         }
     }
 
@@ -194,6 +199,7 @@ impl VideoController {
                     self.mode_clock = 0;
                     if self.ly >= 144 {
                         self.mode = PpuMode::VBlank;
+                        self.vblank_entered = true;
                         // Set VBlank interrupt (bit 0 of IF).
                         io[0x0F] = 0xE0 | ((io[0x0F] | 0x01) & 0x1F);
                     } else {
