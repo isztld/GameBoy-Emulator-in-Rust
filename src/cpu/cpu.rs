@@ -65,7 +65,7 @@ impl CPU {
 
     /// Execute one step: service a pending interrupt OR execute one instruction.
     /// Returns the number of machine cycles consumed (1 machine cycle = 4 T-cycles).
-    pub fn execute(&mut self, bus: &mut MemoryBus) -> u32 {
+    pub fn execute(&mut self, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
         // --- Interrupt check ---------------------------------------------------
         // An interrupt can un-halt the CPU regardless of IME.
         let pending = bus.ie & bus.read(0xFF0F) & 0x1F;
@@ -128,7 +128,7 @@ impl CPU {
                 }
                 1
             }
-            instr => execute_instruction(&mut self.state, bus, instr),
+            instr => execute_instruction(&mut self.state, bus, instr, tick),
         };
 
         self.cycles += cycles as u64;
@@ -179,6 +179,8 @@ mod tests {
     use crate::memory::MemoryBus;
     use crate::cpu::instructions::{R8Register, CBInstruction};
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     #[test]
     fn test_cpu_create() {
         let cpu = CPU::new();
@@ -224,7 +226,7 @@ mod tests {
             dest: crate::cpu::instructions::R16Register::BC,
             value: 0xABCD,
         };
-        let cycles = crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let cycles = crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cycles, 3);
         assert_eq!(cpu.state.registers.bc, 0xABCD);
     }
@@ -237,7 +239,7 @@ mod tests {
             dest: crate::cpu::instructions::R16Register::DE,
             value: 0x1234,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.de, 0x1234);
     }
 
@@ -249,7 +251,7 @@ mod tests {
             dest: crate::cpu::instructions::R16Register::HL,
             value: 0x5678,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.hl, 0x5678);
     }
 
@@ -261,7 +263,7 @@ mod tests {
             dest: crate::cpu::instructions::R16Register::SP,
             value: 0xC000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.sp, 0xC000);
     }
 
@@ -273,7 +275,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::A,
             value: 0x42,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.a(), 0x42);
     }
 
@@ -290,7 +292,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::C,
             src: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.c(), 0x12);
 
         // LD D, C
@@ -298,7 +300,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::D,
             src: crate::cpu::instructions::R8Register::C,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.d(), 0x12);
 
         // LD E, D
@@ -306,7 +308,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::E,
             src: crate::cpu::instructions::R8Register::D,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.e(), 0x12);
 
         // LD H, E
@@ -314,7 +316,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::H,
             src: crate::cpu::instructions::R8Register::E,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.h(), 0x12);
 
         // LD L, H
@@ -322,7 +324,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::L,
             src: crate::cpu::instructions::R8Register::H,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.l(), 0x12);
 
         // LD A, L
@@ -330,7 +332,7 @@ mod tests {
             dest: crate::cpu::instructions::R8Register::A,
             src: crate::cpu::instructions::R8Register::L,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
         assert_eq!(cpu.state.registers.a(), 0x12);
     }
 
@@ -344,7 +346,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdIndR16A {
             src: crate::cpu::instructions::R16Mem::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0x8000), 0xAB);
     }
@@ -359,7 +361,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdIndR16A {
             src: crate::cpu::instructions::R16Mem::DE,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0x9000), 0xCD);
     }
@@ -374,7 +376,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdIndR16A {
             src: crate::cpu::instructions::R16Mem::HLPlus,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xA000), 0xEF);
         assert_eq!(cpu.state.registers.hl, 0xA001); // HL incremented
@@ -390,7 +392,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdIndR16A {
             src: crate::cpu::instructions::R16Mem::HLMinus,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xA000), 0xEF);
         assert_eq!(cpu.state.registers.hl, 0x9FFF); // HL decremented
@@ -406,7 +408,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdAIndR16 {
             dest: crate::cpu::instructions::R16Mem::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x55);
     }
@@ -421,7 +423,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdAIndR16 {
             dest: crate::cpu::instructions::R16Mem::HLPlus,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x66);
         assert_eq!(cpu.state.registers.hl, 0xA001);
@@ -434,7 +436,7 @@ mod tests {
         cpu.state.registers.sp = 0xC000;
 
         let instruction = Instruction::LdIndImm16Sp { address: 0xD000 };
-        execute_instruction(&mut cpu.state, &mut bus, instruction);
+        execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xD000), 0x00); // SP low byte at address
         assert_eq!(bus.read(0xD001), 0xC0); // SP high byte at address + 1
@@ -450,7 +452,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdIndImm16A {
             address: 0xC000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xC000), 0x77);
     }
@@ -464,7 +466,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdAIndImm16 {
             address: 0xC000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x88);
     }
@@ -478,7 +480,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdhIndImm8A {
             address: 0x10,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xFF10), 0x99);
     }
@@ -492,7 +494,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdhAIndImm8 {
             address: 0x10,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xAA);
     }
@@ -505,7 +507,7 @@ mod tests {
         cpu.state.registers.set_a(0xBB);
 
         let instruction = crate::cpu::instructions::Instruction::LdhIndCA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xFF01), 0xBB);
     }
@@ -519,7 +521,7 @@ mod tests {
         bus.write(0xFF01, 0xCC);
 
         let instruction = crate::cpu::instructions::Instruction::LdhAC;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xCC);
     }
@@ -536,7 +538,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x30);
         assert!(!cpu.state.registers.f().is_zero());
@@ -554,7 +556,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_zero());
@@ -570,7 +572,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_carry());
@@ -587,7 +589,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x10);
         assert!(cpu.state.registers.f().is_half_carry());
@@ -604,7 +606,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AdcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x30);
     }
@@ -620,7 +622,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AdcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x31); // 0x10 + 0x20 + 1
     }
@@ -635,7 +637,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::SubAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x20);
         assert!(cpu.state.registers.f().is_subtraction());
@@ -651,7 +653,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::SubAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xE0);
         assert!(cpu.state.registers.f().is_carry());
@@ -668,7 +670,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::SbcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x20);
     }
@@ -684,7 +686,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::SbcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x1F); // 0x30 - 0x10 - 1
     }
@@ -699,7 +701,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AndAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x0F);
         assert!(cpu.state.registers.f().is_half_carry());
@@ -716,7 +718,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AndAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_zero());
@@ -732,7 +734,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::XorAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xF0);
         assert!(!cpu.state.registers.f().is_zero());
@@ -748,7 +750,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::XorAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_zero());
@@ -764,7 +766,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::OrAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xFF);
         assert!(!cpu.state.registers.f().is_zero());
@@ -780,7 +782,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::OrAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_zero());
@@ -796,7 +798,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::CpAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x30); // A unchanged
         assert!(!cpu.state.registers.f().is_carry());
@@ -813,7 +815,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::CpAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x10); // A unchanged
         assert!(cpu.state.registers.f().is_carry());
@@ -829,7 +831,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::CpAR8 {
             reg: crate::cpu::instructions::R8Register::B,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x42); // A unchanged
         assert!(cpu.state.registers.f().is_zero());
@@ -842,7 +844,7 @@ mod tests {
         cpu.state.registers.set_a(0x10);
 
         let instruction = crate::cpu::instructions::Instruction::AddAImm8 { value: 0x20 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x30);
     }
@@ -855,7 +857,7 @@ mod tests {
         cpu.state.registers.f_mut().set_carry(true);
 
         let instruction = crate::cpu::instructions::Instruction::AdcAImm8 { value: 0x20 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x31); // 0x10 + 0x20 + 1
     }
@@ -867,7 +869,7 @@ mod tests {
         cpu.state.registers.set_a(0x30);
 
         let instruction = crate::cpu::instructions::Instruction::SubAImm8 { value: 0x10 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x20);
         assert!(cpu.state.registers.f().is_subtraction());
@@ -881,7 +883,7 @@ mod tests {
         cpu.state.registers.f_mut().set(0); // clear all flags
 
         let instruction = crate::cpu::instructions::Instruction::SbcAImm8 { value: 0x10 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x20);
     }
@@ -893,7 +895,7 @@ mod tests {
         cpu.state.registers.set_a(0xFF);
 
         let instruction = crate::cpu::instructions::Instruction::AndAImm8 { value: 0x0F };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x0F);
     }
@@ -905,7 +907,7 @@ mod tests {
         cpu.state.registers.set_a(0xFF);
 
         let instruction = crate::cpu::instructions::Instruction::XorAImm8 { value: 0x0F };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xF0);
     }
@@ -917,7 +919,7 @@ mod tests {
         cpu.state.registers.set_a(0xF0);
 
         let instruction = crate::cpu::instructions::Instruction::OrAImm8 { value: 0x0F };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xFF);
     }
@@ -929,7 +931,7 @@ mod tests {
         cpu.state.registers.set_a(0x30);
 
         let instruction = crate::cpu::instructions::Instruction::CpAImm8 { value: 0x10 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x30); // A unchanged
         assert!(!cpu.state.registers.f().is_carry());
@@ -946,7 +948,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::IncR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.bc, 0x1235);
     }
@@ -960,7 +962,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::IncR16 {
             reg: crate::cpu::instructions::R16Register::SP,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xC001);
     }
@@ -974,7 +976,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::DecR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.bc, 0x1233);
     }
@@ -988,7 +990,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::IncR8 {
             reg: crate::cpu::instructions::R8Register::A,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x10);
         assert!(!cpu.state.registers.f().is_zero());
@@ -1003,7 +1005,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::IncR8 {
             reg: crate::cpu::instructions::R8Register::A,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_zero());
@@ -1018,7 +1020,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::DecR8 {
             reg: crate::cpu::instructions::R8Register::A,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x0F);
         assert!(!cpu.state.registers.f().is_zero());
@@ -1035,7 +1037,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::IncR8 {
             reg: crate::cpu::instructions::R8Register::HL,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xC000), 0x43);
     }
@@ -1050,7 +1052,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::DecR8 {
             reg: crate::cpu::instructions::R8Register::HL,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(bus.read(0xC000), 0x41);
     }
@@ -1065,7 +1067,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddHlR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.hl, 0x1244);
         assert!(!cpu.state.registers.f().is_carry());
@@ -1082,7 +1084,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddHlR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.hl, 0x0000);
         assert!(cpu.state.registers.f().is_carry());
@@ -1098,7 +1100,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddHlR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.hl, 0x1000);
         assert!(cpu.state.registers.f().is_half_carry());
@@ -1113,7 +1115,7 @@ mod tests {
         cpu.state.registers.set_a(0b10110001); // 0xB1
 
         let instruction = crate::cpu::instructions::Instruction::RLCA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b01100011); // 0x63
         assert!(cpu.state.registers.f().is_carry()); // MSB was 1
@@ -1127,7 +1129,7 @@ mod tests {
         cpu.state.registers.set_a(0b10110001); // 0xB1
 
         let instruction = crate::cpu::instructions::Instruction::RRCA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b11011000); // 0xD8
         assert!(cpu.state.registers.f().is_carry()); // LSB was 1
@@ -1142,7 +1144,7 @@ mod tests {
         cpu.state.registers.f_mut().set_carry(true);
 
         let instruction = crate::cpu::instructions::Instruction::RLA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b01100011); // 0x63
         assert!(cpu.state.registers.f().is_carry()); // MSB was 1
@@ -1156,7 +1158,7 @@ mod tests {
         cpu.state.registers.f_mut().set_carry(true);
 
         let instruction = crate::cpu::instructions::Instruction::RRA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b11011000); // 0xD8
         assert!(cpu.state.registers.f().is_carry()); // LSB was 1
@@ -1170,7 +1172,7 @@ mod tests {
         cpu.state.registers.f_mut().set(0);
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         // 0x19 has both nibbles <= 9, so no adjustment needed
         assert_eq!(cpu.state.registers.a(), 0x19);
@@ -1187,7 +1189,7 @@ mod tests {
         f.set_carry(false);
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x10);
     }
@@ -1203,7 +1205,7 @@ mod tests {
         f.set_carry(false);
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_carry());
@@ -1217,7 +1219,7 @@ mod tests {
         cpu.state.registers.set_a(0x55);
 
         let instruction = crate::cpu::instructions::Instruction::CPL;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0xAA);
         assert!(cpu.state.registers.f().is_subtraction());
@@ -1231,7 +1233,7 @@ mod tests {
         cpu.state.registers.f_mut().set_carry(false);
 
         let instruction = crate::cpu::instructions::Instruction::SCF;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(cpu.state.registers.f().is_carry());
         assert!(!cpu.state.registers.f().is_subtraction());
@@ -1244,13 +1246,13 @@ mod tests {
         cpu.state.registers.f_mut().set_carry(false);
 
         let instruction = crate::cpu::instructions::Instruction::CCF;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(cpu.state.registers.f().is_carry()); // Flip carry
 
         cpu.state.registers.f_mut().set_carry(true);
         let instruction = crate::cpu::instructions::Instruction::CCF;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(!cpu.state.registers.f().is_carry()); // Flip carry
     }
@@ -1264,7 +1266,7 @@ mod tests {
         cpu.state.registers.pc = 0x1000;
 
         let instruction = crate::cpu::instructions::Instruction::JrImm8 { offset: 0x05 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1005);
     }
@@ -1276,7 +1278,7 @@ mod tests {
         cpu.state.registers.pc = 0x1005;
 
         let instruction = crate::cpu::instructions::Instruction::JrImm8 { offset: -0x03 };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1002);
     }
@@ -1292,7 +1294,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NZ,
             offset: 0x05,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1005);
     }
@@ -1308,7 +1310,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NZ,
             offset: 0x05,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1000); // Not taken
     }
@@ -1324,7 +1326,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::Z,
             offset: 0x05,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1005);
     }
@@ -1340,7 +1342,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NC,
             offset: 0x05,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1005);
     }
@@ -1354,7 +1356,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::JpImm16 {
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1370,7 +1372,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NZ,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1386,7 +1388,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::Z,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1402,7 +1404,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NC,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1418,7 +1420,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::C,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1430,7 +1432,7 @@ mod tests {
         cpu.state.registers.hl = 0x2000;
 
         let instruction = crate::cpu::instructions::Instruction::JpHl;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1445,7 +1447,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::CallImm16 {
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);    // Jumped to target
         assert_eq!(cpu.state.registers.sp, 0xBFFE);    // SP decreased by 2
@@ -1465,7 +1467,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NZ,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);    // Jump taken
         assert_eq!(cpu.state.registers.sp, 0xBFFE);    // SP decreased by 2
@@ -1485,7 +1487,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::NZ,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1000); // Not called
         assert_eq!(cpu.state.registers.sp, 0xC000); // SP unchanged
@@ -1503,7 +1505,7 @@ mod tests {
             cond: crate::cpu::instructions::Condition::C,
             address: 0x2000,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2000);
     }
@@ -1518,7 +1520,7 @@ mod tests {
         bus.write(0xBFFD, 0x20); // high byte
 
         let instruction = crate::cpu::instructions::Instruction::RET;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2002); // PC set to return address
         assert_eq!(cpu.state.registers.sp, 0xBFFE); // SP incremented by 2
@@ -1537,7 +1539,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::RetCond {
             cond: crate::cpu::instructions::Condition::NZ,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2002); // RET taken
         assert_eq!(cpu.state.registers.sp, 0xBFFE); // SP incremented by 2
@@ -1554,7 +1556,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::RetCond {
             cond: crate::cpu::instructions::Condition::NZ,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x1000);
         assert_eq!(cpu.state.registers.sp, 0xBFFC); // Not changed
@@ -1571,7 +1573,7 @@ mod tests {
         cpu.state.ime = false;
 
         let instruction = crate::cpu::instructions::Instruction::RETI;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x2002);
         assert!(cpu.state.ime); // IME set by RETI
@@ -1585,7 +1587,7 @@ mod tests {
         cpu.state.registers.sp = 0xC000;
 
         let instruction = Instruction::RST { target: 0x08 };
-        execute_instruction(&mut cpu.state, &mut bus, instruction);
+        execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.pc, 0x0008);     // jumped to target
         assert_eq!(cpu.state.registers.sp, 0xBFFE);     // SP decremented by 2
@@ -1605,7 +1607,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::PushR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xBFFE);      // SP decremented by 2
         assert_eq!(bus.read(0xBFFE), 0x34);              // Low byte (C)
@@ -1622,7 +1624,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::PushR16 {
             reg: crate::cpu::instructions::R16Register::DE,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xBFFE); // SP decremented by 2
         assert_eq!(bus.read(0xBFFE), 0x78);         // Low byte (E)
@@ -1640,7 +1642,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::PopR16 {
             reg: crate::cpu::instructions::R16Register::BC,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.bc, 0x3412);
         assert_eq!(cpu.state.registers.sp, 0xC000);
@@ -1657,7 +1659,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::PopR16 {
             reg: crate::cpu::instructions::R16Register::AF,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.af, 0x00A0); // lower nibble of F is always zero
         assert_eq!(cpu.state.registers.sp, 0xC000); // SP incremented
@@ -1674,7 +1676,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddSpImm8 {
             value: 0x05,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xC005);
         assert!(!cpu.state.registers.f().is_zero());
@@ -1690,7 +1692,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::AddSpImm8 {
             value: -0x05,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xBFFB);
     }
@@ -1704,7 +1706,7 @@ mod tests {
         cpu.state.registers.sp = 0xC000;
 
         let instruction = Instruction::AddSpImm8 { value: -1i8 };
-        execute_instruction(&mut cpu.state, &mut bus, instruction);
+        execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xBFFF);
         assert!(!cpu.state.registers.f().is_carry());
@@ -1723,7 +1725,7 @@ mod tests {
         cpu.state.registers.sp = 0xC0FF;
 
         let instruction = Instruction::AddSpImm8 { value: 1i8 };
-        execute_instruction(&mut cpu.state, &mut bus, instruction);
+        execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xC100);
         assert!(cpu.state.registers.f().is_carry());
@@ -1741,7 +1743,7 @@ mod tests {
         cpu.state.registers.sp = 0xC00F;
 
         let instruction = Instruction::AddSpImm8 { value: 1i8 };
-        execute_instruction(&mut cpu.state, &mut bus, instruction);
+        execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xC010);
         assert!(!cpu.state.registers.f().is_carry());
@@ -1757,7 +1759,7 @@ mod tests {
         let instruction = crate::cpu::instructions::Instruction::LdHlSpImm8 {
             value: 0x0A,
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.hl, 0xC00F);
         assert!(!cpu.state.registers.f().is_zero());
@@ -1771,7 +1773,7 @@ mod tests {
         cpu.state.registers.hl = 0xC000;
 
         let instruction = crate::cpu::instructions::Instruction::LdSpHl;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.sp, 0xC000);
     }
@@ -1785,7 +1787,7 @@ mod tests {
         cpu.state.ime = true;
 
         let instruction = crate::cpu::instructions::Instruction::DI;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(!cpu.state.ime);
     }
@@ -1797,7 +1799,7 @@ mod tests {
         cpu.state.ime = false;
 
         let instruction = crate::cpu::instructions::Instruction::EI;
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         // EI does not enable IME immediately; ime_pending is set for a 1-instruction delay.
         assert!(!cpu.state.ime);
@@ -1811,7 +1813,7 @@ mod tests {
         cpu.state.registers.pc = 0x1000;
 
         let instruction = crate::cpu::instructions::Instruction::NOP;
-        let cycles = crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let cycles = crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.state.registers.pc, 0x1000); // PC unchanged
@@ -1823,7 +1825,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
         let instruction = crate::cpu::instructions::Instruction::STOP;
-        let cycles = crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        let cycles = crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cycles, 1);
     }
@@ -1841,7 +1843,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::B,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.b(), 0b01100011); // 0x63
         assert!(cpu.state.registers.f().is_carry());
@@ -1859,7 +1861,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b11011000); // 0xD8
         assert!(cpu.state.registers.f().is_carry());
@@ -1877,7 +1879,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b01100011);
         assert!(cpu.state.registers.f().is_carry());
@@ -1895,7 +1897,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b11011000);
         assert!(cpu.state.registers.f().is_carry());
@@ -1912,7 +1914,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b10000000);
         assert!(!cpu.state.registers.f().is_carry());
@@ -1929,7 +1931,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b11100000); // Sign extended
         assert!(!cpu.state.registers.f().is_carry()); // LSB was 0
@@ -1946,7 +1948,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x21);
         assert!(!cpu.state.registers.f().is_zero());
@@ -1963,7 +1965,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0x00);
         assert!(cpu.state.registers.f().is_zero());
@@ -1980,7 +1982,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b00100000);
         assert!(!cpu.state.registers.f().is_carry()); // LSB was 0
@@ -1997,7 +1999,7 @@ mod tests {
                 reg: R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b00000000);
         assert!(cpu.state.registers.f().is_carry()); // LSB was 1
@@ -2016,7 +2018,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(!cpu.state.registers.f().is_zero()); // Bit 0 is set
         assert!(cpu.state.registers.f().is_half_carry());
@@ -2034,7 +2036,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(cpu.state.registers.f().is_zero()); // Bit 0 is clear
         assert!(cpu.state.registers.f().is_half_carry());
@@ -2052,7 +2054,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(!cpu.state.registers.f().is_zero()); // Bit 7 is set
     }
@@ -2070,7 +2072,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::HL,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(!cpu.state.registers.f().is_zero()); // Bit 3 is set
     }
@@ -2087,7 +2089,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::B,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.b(), 0b11111110);
     }
@@ -2104,7 +2106,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b01111111);
     }
@@ -2121,7 +2123,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::B,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.b(), 0b00000001);
     }
@@ -2138,7 +2140,7 @@ mod tests {
                 reg: crate::cpu::instructions::R8Register::A,
             },
         };
-        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction);
+        crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert_eq!(cpu.state.registers.a(), 0b10000000);
     }
@@ -2163,19 +2165,19 @@ mod tests {
         let mut bus = MemoryBus::new(rom);
 
         // Execute LD A, 0x10
-        let cycles1 = cpu.execute(&mut bus);
+        let cycles1 = cpu.execute(&mut bus, &mut noop_tick);
         assert_eq!(cycles1, 2);
         assert_eq!(cpu.cycles(), 2);
         assert_eq!(cpu.state.registers.a(), 0x10);
 
         // Execute ADD A, 0x20
-        let cycles2 = cpu.execute(&mut bus);
+        let cycles2 = cpu.execute(&mut bus, &mut noop_tick);
         assert_eq!(cycles2, 2);
         assert_eq!(cpu.cycles(), 4);
         assert_eq!(cpu.state.registers.a(), 0x30);
 
         // Execute RET (returns to 0x0100 which loops back)
-        let cycles3 = cpu.execute(&mut bus);
+        let cycles3 = cpu.execute(&mut bus, &mut noop_tick);
         assert_eq!(cycles3, 4);
     }
 
@@ -2186,7 +2188,7 @@ mod tests {
         cpu.halted = true;
 
         // When halted, CPU should return 1 cycle
-        let cycles = cpu.execute(&mut bus);
+        let cycles = cpu.execute(&mut bus, &mut noop_tick);
         assert_eq!(cycles, 1);
         assert_eq!(cpu.cycles(), 1);
     }

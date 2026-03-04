@@ -76,16 +76,20 @@ impl Timer {
     }
 
     /// Advance the timer by one machine cycle.
-    /// Writes the timer interrupt bit (bit 2) into IF at `0xFF0F` on overflow.
-    pub fn tick(&mut self, bus: &mut crate::memory::MemoryBus) {
+    /// Takes a direct reference to the I/O register array (bus.io) rather than
+    /// the full MemoryBus, so the caller can hold other borrows of the bus
+    /// concurrently (e.g. during instruction execution).
+    ///
+    /// Writes the timer interrupt bit (bit 2) into io[0x0F] on TIMA overflow.
+    pub fn tick(&mut self, io: &mut [u8; 128]) {
         // --- DIV ---
         self.div_counter += 1;
         if self.div_counter >= DIV_PERIOD {
             self.div_counter = 0;
             self.div = self.div.wrapping_add(1);
-            // Keep the bus DIV register in sync.
-            // Write directly to the internal io array to avoid the reset-on-write behaviour.
-            bus.io[0x04] = self.div;
+            // Keep the I/O DIV register in sync (direct write to avoid the
+            // reset-on-write behaviour of the public bus.write path).
+            io[0x04] = self.div;
         }
 
         // --- TIMA ---
@@ -100,13 +104,13 @@ impl Timer {
             if overflow {
                 // Reload from TMA and request timer interrupt (IF bit 2).
                 self.tima = self.tma;
-                let if_val = bus.read(0xFF0F);
-                bus.write(0xFF0F, if_val | 0x04);
+                // Set bit 2 of IF; preserve bits 5-7 (open-bus) and other flags.
+                io[0x0F] = 0xE0 | ((io[0x0F] | 0x04) & 0x1F);
             } else {
                 self.tima = new_tima;
             }
-            // Keep bus TIMA register in sync.
-            bus.io[0x05] = self.tima;
+            // Keep I/O TIMA register in sync.
+            io[0x05] = self.tima;
         }
     }
 
@@ -150,10 +154,11 @@ impl Default for Timer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::MemoryBus;
 
-    fn make_bus() -> MemoryBus {
-        MemoryBus::new(vec![0u8; 32768])
+    fn make_io() -> [u8; 128] {
+        let mut io = [0u8; 128];
+        io[0x0F] = 0xE0; // IF initial value (bits 5-7 open bus)
+        io
     }
 
     #[test]
@@ -181,18 +186,18 @@ mod tests {
     #[test]
     fn test_div_increments_every_64_cycles() {
         let mut timer = Timer::new();
-        let mut bus = make_bus();
+        let mut io = make_io();
 
         for _ in 0..63 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.div, 0, "DIV should not increment before 64 cycles");
 
-        timer.tick(&mut bus);
+        timer.tick(&mut io);
         assert_eq!(timer.div, 1, "DIV should increment after 64 cycles");
 
         for _ in 0..64 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.div, 2);
     }
@@ -200,11 +205,10 @@ mod tests {
     #[test]
     fn test_div_wraps() {
         let mut timer = Timer::new();
-        let mut bus = make_bus();
+        let mut io = make_io();
         timer.div = 0xFF;
-        // One more full DIV_PERIOD to trigger the increment
         for _ in 0..DIV_PERIOD {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.div, 0);
     }
@@ -212,78 +216,74 @@ mod tests {
     #[test]
     fn test_write_div_resets_counter_and_register() {
         let mut timer = Timer::new();
-        let mut bus = make_bus();
-        // Advance most of the way through a DIV period
+        let mut io = make_io();
         for _ in 0..63 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         timer.write_div();
         assert_eq!(timer.div, 0);
         assert_eq!(timer.div_counter, 0);
-        // After reset, should take another full 64 cycles before incrementing
         for _ in 0..63 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.div, 0, "DIV must not increment early after reset");
-        timer.tick(&mut bus);
+        timer.tick(&mut io);
         assert_eq!(timer.div, 1);
     }
 
     #[test]
     fn test_tima_disabled_by_default() {
         let mut timer = Timer::new();
-        let mut bus = make_bus();
+        let mut io = make_io();
         for _ in 0..1000 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.tima, 0, "TIMA must not increment when timer is disabled");
     }
 
     #[test]
     fn test_tima_increments_at_4096hz() {
-        // TAC = 0x04: enabled, clock select 0 (4096 Hz → period 256)
         let mut timer = Timer::new();
-        let mut bus = make_bus();
+        let mut io = make_io();
         timer.write_tac(0x04);
 
         for _ in 0..255 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.tima, 0, "TIMA must not increment before 256 cycles");
 
-        timer.tick(&mut bus);
+        timer.tick(&mut io);
         assert_eq!(timer.tima, 1);
     }
 
     #[test]
     fn test_tima_overflow_reloads_tma_and_sets_if() {
         let mut timer = Timer::new();
-        let mut bus = make_bus();
-        timer.write_tac(0x04); // enabled, 4096 Hz
+        let mut io = make_io();
+        timer.write_tac(0x04);
         timer.write_tma(0x42);
         timer.tima = 0xFF;
-        timer.tima_counter = 255; // one tick away from firing
+        timer.tima_counter = 255;
 
-        timer.tick(&mut bus);
+        timer.tick(&mut io);
 
         assert_eq!(timer.tima, 0x42, "TIMA must reload from TMA on overflow");
-        assert_eq!(bus.read(0xFF0F) & 0x04, 0x04, "timer interrupt bit must be set in IF");
+        assert_eq!(io[0x0F] & 0x04, 0x04, "timer interrupt bit must be set in IF");
     }
 
     #[test]
     fn test_tima_fastest_clock() {
-        // TAC clock select 1: 262144 Hz → period 4
         let mut timer = Timer::new();
-        let mut bus = make_bus();
-        timer.write_tac(0x05); // enabled, clock select 1
+        let mut io = make_io();
+        timer.write_tac(0x05);
 
         for _ in 0..4 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.tima, 1);
 
         for _ in 0..4 {
-            timer.tick(&mut bus);
+            timer.tick(&mut io);
         }
         assert_eq!(timer.tima, 2);
     }

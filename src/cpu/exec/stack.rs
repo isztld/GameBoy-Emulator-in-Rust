@@ -5,31 +5,39 @@ use crate::cpu::instructions::R16Register;
 use crate::cpu::exec::register_utils::r16;
 
 /// Execute RET
-pub fn exec_ret(cpu_state: &mut CPUState, bus: &mut MemoryBus) -> u32 {
+pub fn exec_ret(cpu_state: &mut CPUState, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     let low = bus.read(sp);
+    tick(&mut bus.io);
     let high = bus.read(sp.wrapping_add(1));
+    tick(&mut bus.io);
     cpu_state.registers.sp = sp.wrapping_add(2);
     cpu_state.registers.pc = ((high as u16) << 8) | (low as u16);
+    tick(&mut bus.io); // internal delay
     4
 }
 
 /// Execute RETI
-pub fn exec_reti(cpu_state: &mut CPUState, bus: &mut MemoryBus) -> u32 {
+pub fn exec_reti(cpu_state: &mut CPUState, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     let low = bus.read(sp);
+    tick(&mut bus.io);
     let high = bus.read(sp.wrapping_add(1));
+    tick(&mut bus.io);
     cpu_state.registers.sp = sp.wrapping_add(2);
     cpu_state.registers.pc = ((high as u16) << 8) | (low as u16);
     cpu_state.ime = true;
+    tick(&mut bus.io); // internal delay
     4
 }
 
 /// Execute POP r16
-pub fn exec_pop_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut MemoryBus) -> u32 {
+pub fn exec_pop_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     let low = bus.read(sp);
+    tick(&mut bus.io);
     let high = bus.read(sp.wrapping_add(1));
+    tick(&mut bus.io);
     cpu_state.registers.sp = sp.wrapping_add(2);
     let value = ((high as u16) << 8) | (low as u16);
     crate::cpu::exec::register_utils::set_r16(&mut cpu_state.registers, reg, value);
@@ -37,22 +45,28 @@ pub fn exec_pop_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut Memory
 }
 
 /// Execute PUSH r16
-pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut MemoryBus) -> u32 {
+pub fn exec_push_r16(cpu_state: &mut CPUState, reg: R16Register, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     let value = r16(&cpu_state.registers, reg);
+    tick(&mut bus.io); // internal delay before writes
     // Store low byte at the lower address (sp‑2) and high byte at the higher address (sp‑1)
-    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);   // low byte at sp‑2
     bus.write(sp.wrapping_sub(1), (value >> 8) as u8);       // high byte at sp‑1
+    tick(&mut bus.io);
+    bus.write(sp.wrapping_sub(2), (value & 0x00FF) as u8);   // low byte at sp‑2
+    tick(&mut bus.io);
     cpu_state.registers.sp = sp.wrapping_sub(2);
     4
 }
 
 /// Execute RST n
-pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u32 {
+pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     let return_pc = cpu_state.registers.pc; // PC already pre-advanced by CPU::execute
+    tick(&mut bus.io); // internal delay before writes
     bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);
+    tick(&mut bus.io);
     bus.write(sp.wrapping_sub(2), (return_pc & 0xFF) as u8);
+    tick(&mut bus.io);
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = target as u16;
     4
@@ -60,7 +74,7 @@ pub fn exec_rst(cpu_state: &mut CPUState, target: u8, bus: &mut MemoryBus) -> u3
 
 
 /// Execute ADD SP, r8
-pub fn exec_add_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
+pub fn exec_add_sp_imm8(cpu_state: &mut CPUState, value: i8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     // Flags are computed on the unsigned byte addition — the offset's raw
     // bit pattern is treated as an unsigned byte for H and C flag purposes.
@@ -71,11 +85,14 @@ pub fn exec_add_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F);
     cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF);
+    tick(io); // simulated imm read
+    tick(io); // internal delay 1
+    tick(io); // internal delay 2
     4
 }
 
 /// Execute LD (HL), SP
-pub fn exec_ld_hl_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
+pub fn exec_ld_hl_sp_imm8(cpu_state: &mut CPUState, value: i8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let sp = cpu_state.registers.sp;
     let rhs_byte = value as u8 as u16;
     let result = sp.wrapping_add(value as i16 as u16);
@@ -84,12 +101,15 @@ pub fn exec_ld_hl_sp_imm8(cpu_state: &mut CPUState, value: i8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F);
     cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF);
+    tick(io); // simulated imm read
+    tick(io); // internal delay
     3
 }
 
 /// Execute LD SP, HL
-pub fn exec_ld_sp_hl(cpu_state: &mut CPUState) -> u32 {
+pub fn exec_ld_sp_hl(cpu_state: &mut CPUState, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     cpu_state.registers.sp = cpu_state.registers.hl;
+    tick(io); // internal cycle
     2
 }
 
@@ -107,26 +127,32 @@ pub fn exec_ei(cpu_state: &mut CPUState) -> u32 {
 }
 
 /// Execute LDH (C), A
-pub fn exec_ldh_ind_c_a(cpu_state: &mut CPUState, bus: &mut MemoryBus) -> u32 {
+pub fn exec_ldh_ind_c_a(cpu_state: &mut CPUState, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     bus.write(0xFF00u16.wrapping_add(cpu_state.registers.c() as u16), cpu_state.registers.a());
+    tick(&mut bus.io);
     2
 }
 
 /// Execute LDH A, (C)
-pub fn exec_ldh_a_c(cpu_state: &mut CPUState, bus: &mut MemoryBus) -> u32 {
+pub fn exec_ldh_a_c(cpu_state: &mut CPUState, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     cpu_state.registers.set_a(bus.read(0xFF00u16.wrapping_add(cpu_state.registers.c() as u16)));
+    tick(&mut bus.io);
     2
 }
 
 /// Execute LDH (a8), A
-pub fn exec_ldh_ind_imm8_a(cpu_state: &mut CPUState, address: u8, bus: &mut MemoryBus) -> u32 {
+pub fn exec_ldh_ind_imm8_a(cpu_state: &mut CPUState, address: u8, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // simulated imm read
     bus.write(0xFF00u16.wrapping_add(address as u16), cpu_state.registers.a());
+    tick(&mut bus.io);
     3
 }
 
 /// Execute LDH A, (a8)
-pub fn exec_ldh_a_ind_imm8(cpu_state: &mut CPUState, address: u8, bus: &mut MemoryBus) -> u32 {
+pub fn exec_ldh_a_ind_imm8(cpu_state: &mut CPUState, address: u8, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // simulated imm read
     cpu_state.registers.set_a(bus.read(0xFF00u16.wrapping_add(address as u16)));
+    tick(&mut bus.io);
     3
 }
 
@@ -146,6 +172,8 @@ mod tests {
         cpu
     }
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     #[test]
     fn test_ret() {
         let mut cpu = init_cpu_state();
@@ -154,7 +182,7 @@ mod tests {
         bus.write(0xFFFC, 0x00); // low byte
         bus.write(0xFFFD, 0x80); // high byte
 
-        let cycles = exec_ret(&mut cpu, &mut bus);
+        let cycles = exec_ret(&mut cpu, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -170,7 +198,7 @@ mod tests {
         bus.write(0xFFFC, 0x00); // low byte
         bus.write(0xFFFD, 0x80); // high byte
 
-        let cycles = exec_reti(&mut cpu, &mut bus);
+        let cycles = exec_reti(&mut cpu, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -186,7 +214,7 @@ mod tests {
         bus.write(0xFFFC, 0x34); // low byte
         bus.write(0xFFFD, 0x12); // high byte
 
-        let cycles = exec_pop_r16(&mut cpu, R16Register::BC, &mut bus);
+        let cycles = exec_pop_r16(&mut cpu, R16Register::BC, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.bc, 0x1234);
@@ -201,7 +229,7 @@ mod tests {
         bus.write(0xFFFC, 0x34); // low byte (F — lower 4 bits must read back as 0)
         bus.write(0xFFFD, 0x12); // high byte (A)
 
-        let cycles = exec_pop_r16(&mut cpu, R16Register::AF, &mut bus);
+        let cycles = exec_pop_r16(&mut cpu, R16Register::AF, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.af, 0x1230); // lower nibble of F always 0
@@ -214,7 +242,7 @@ mod tests {
         cpu.registers.bc = 0x1234;
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_push_r16(&mut cpu, R16Register::BC, &mut bus);
+        let cycles = exec_push_r16(&mut cpu, R16Register::BC, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0xFFFC);
@@ -230,9 +258,9 @@ mod tests {
         cpu.registers.bc = 0xABCD;
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        exec_push_r16(&mut cpu, R16Register::BC, &mut bus);
+        exec_push_r16(&mut cpu, R16Register::BC, &mut bus, &mut noop_tick);
         cpu.registers.bc = 0x0000;
-        exec_pop_r16(&mut cpu, R16Register::BC, &mut bus);
+        exec_pop_r16(&mut cpu, R16Register::BC, &mut bus, &mut noop_tick);
 
         assert_eq!(cpu.registers.bc, 0xABCD);
         assert_eq!(cpu.registers.sp, 0xFFFE);
@@ -246,7 +274,7 @@ mod tests {
         cpu_state.registers.pc = 0x1001;
         cpu_state.registers.sp = 0xC000;
 
-        exec_rst(&mut cpu_state, 0x08, &mut bus);
+        exec_rst(&mut cpu_state, 0x08, &mut bus, &mut noop_tick);
 
         assert_eq!(cpu_state.registers.pc, 0x0008);
         assert_eq!(cpu_state.registers.sp, 0xBFFE);
@@ -262,10 +290,10 @@ mod tests {
         cpu_state.registers.pc = 0x1001;
         cpu_state.registers.sp = 0xC000;
 
-        exec_rst(&mut cpu_state, 0x08, &mut bus);
+        exec_rst(&mut cpu_state, 0x08, &mut bus, &mut noop_tick);
         assert_eq!(cpu_state.registers.pc, 0x0008);
 
-        exec_ret(&mut cpu_state, &mut bus);
+        exec_ret(&mut cpu_state, &mut bus, &mut noop_tick);
         assert_eq!(cpu_state.registers.pc, 0x1001); // back to instruction after RST
         assert_eq!(cpu_state.registers.sp, 0xC000);
     }
@@ -275,7 +303,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFF00;
 
-        let cycles = exec_add_sp_imm8(&mut cpu, 10);
+        let cycles = exec_add_sp_imm8(&mut cpu, 10, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0xFF0A);
@@ -293,7 +321,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFF1F;
 
-        let cycles = exec_add_sp_imm8(&mut cpu, -1);
+        let cycles = exec_add_sp_imm8(&mut cpu, -1, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0xFF1E);
@@ -308,7 +336,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0x000F;
 
-        let cycles = exec_add_sp_imm8(&mut cpu, 1);
+        let cycles = exec_add_sp_imm8(&mut cpu, 1, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0x0010);
@@ -321,7 +349,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0x00FF;
 
-        let cycles = exec_add_sp_imm8(&mut cpu, 1);
+        let cycles = exec_add_sp_imm8(&mut cpu, 1, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.sp, 0x0100);
@@ -337,7 +365,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFF00;
 
-        exec_add_sp_imm8(&mut cpu, -16);
+        exec_add_sp_imm8(&mut cpu, -16, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cpu.registers.sp, 0xFEF0);
         assert!(!cpu.registers.f().is_carry());
@@ -349,7 +377,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFF00;
 
-        let cycles = exec_ld_hl_sp_imm8(&mut cpu, 10);
+        let cycles = exec_ld_hl_sp_imm8(&mut cpu, 10, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.hl, 0xFF0A);
@@ -363,7 +391,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.sp = 0xFF00;
 
-        let cycles = exec_ld_hl_sp_imm8(&mut cpu, -10);
+        let cycles = exec_ld_hl_sp_imm8(&mut cpu, -10, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.hl, 0xFEF6);
@@ -375,7 +403,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.hl = 0x8000;
 
-        let cycles = exec_ld_sp_hl(&mut cpu);
+        let cycles = exec_ld_sp_hl(&mut cpu, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.sp, 0x8000);
@@ -407,7 +435,7 @@ mod tests {
         cpu.registers.set_c(0x10);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_ldh_ind_c_a(&mut cpu, &mut bus);
+        let cycles = exec_ldh_ind_c_a(&mut cpu, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(bus.read(0xFF10), 0x42);
@@ -420,7 +448,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         bus.write(0xFF10, 0xAB);
 
-        let cycles = exec_ldh_a_c(&mut cpu, &mut bus);
+        let cycles = exec_ldh_a_c(&mut cpu, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0xAB);
@@ -432,7 +460,7 @@ mod tests {
         cpu.registers.set_a(0x77);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_ldh_ind_imm8_a(&mut cpu, 0x10, &mut bus);
+        let cycles = exec_ldh_ind_imm8_a(&mut cpu, 0x10, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(bus.read(0xFF10), 0x77);
@@ -444,7 +472,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         bus.write(0xFF10, 0xAB);
 
-        let cycles = exec_ldh_a_ind_imm8(&mut cpu, 0x10, &mut bus);
+        let cycles = exec_ldh_a_ind_imm8(&mut cpu, 0x10, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.a(), 0xAB);

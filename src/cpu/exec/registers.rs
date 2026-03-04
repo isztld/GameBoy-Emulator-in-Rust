@@ -5,24 +5,32 @@ use crate::cpu::instructions::{R16Register, R8Register};
 use crate::cpu::exec::register_utils::{r16, set_r16, get_r8, set_r8};
 
 /// Execute INC r16
-pub fn exec_inc_r16(cpu_state: &mut CPUState, reg: R16Register) -> u32 {
+pub fn exec_inc_r16(cpu_state: &mut CPUState, reg: R16Register, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = r16(&cpu_state.registers, reg);
     set_r16(&mut cpu_state.registers, reg, val.wrapping_add(1));
+    tick(io);
     2
 }
 
 /// Execute DEC r16
-pub fn exec_dec_r16(cpu_state: &mut CPUState, reg: R16Register) -> u32 {
+pub fn exec_dec_r16(cpu_state: &mut CPUState, reg: R16Register, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = r16(&cpu_state.registers, reg);
     set_r16(&mut cpu_state.registers, reg, val.wrapping_sub(1));
+    tick(io);
     2
 }
 
 /// Execute INC r8
-pub fn exec_inc_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_inc_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let old = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL {
+        tick(&mut bus.io);
+    }
     let new_val = old.wrapping_add(1);
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL {
+        tick(&mut bus.io);
+    }
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((old & 0x0F) == 0x0F);
@@ -33,10 +41,16 @@ pub fn exec_inc_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Registe
 }
 
 /// Execute DEC r8
-pub fn exec_dec_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_dec_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let old = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL {
+        tick(&mut bus.io);
+    }
     let new_val = old.wrapping_sub(1);
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL {
+        tick(&mut bus.io);
+    }
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_half_carry((old & 0x0F) == 0x00);
@@ -47,7 +61,7 @@ pub fn exec_dec_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Registe
 }
 
 /// Execute ADD HL, r16
-pub fn exec_add_hl_r16(cpu_state: &mut CPUState, reg: R16Register) -> u32 {
+pub fn exec_add_hl_r16(cpu_state: &mut CPUState, reg: R16Register, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let hl = r16(&cpu_state.registers, R16Register::HL) as u32;
     let add = r16(&cpu_state.registers, reg) as u32;
     let result = hl.wrapping_add(add);
@@ -55,6 +69,7 @@ pub fn exec_add_hl_r16(cpu_state: &mut CPUState, reg: R16Register) -> u32 {
     cpu_state.registers.f_mut().set_half_carry((hl & 0x0FFF) + (add & 0x0FFF) > 0x0FFF);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_carry(result > 0xFFFF);
+    tick(io);
     2
 }
 
@@ -77,6 +92,8 @@ mod tests {
         cpu
     }
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     // -----------------------------------------------------------------------
     // INC r16 / DEC r16
     // -----------------------------------------------------------------------
@@ -85,7 +102,7 @@ mod tests {
     fn test_inc_r16() {
         let mut cpu = init_cpu_state();
         cpu.registers.bc = 0x1234;
-        assert_eq!(exec_inc_r16(&mut cpu, R16Register::BC), 2);
+        assert_eq!(exec_inc_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick), 2);
         assert_eq!(cpu.registers.bc, 0x1235);
     }
 
@@ -93,7 +110,7 @@ mod tests {
     fn test_inc_r16_wrap() {
         let mut cpu = init_cpu_state();
         cpu.registers.bc = 0xFFFF;
-        assert_eq!(exec_inc_r16(&mut cpu, R16Register::BC), 2);
+        assert_eq!(exec_inc_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick), 2);
         assert_eq!(cpu.registers.bc, 0x0000);
     }
 
@@ -101,7 +118,7 @@ mod tests {
     fn test_dec_r16() {
         let mut cpu = init_cpu_state();
         cpu.registers.bc = 0x1234;
-        assert_eq!(exec_dec_r16(&mut cpu, R16Register::BC), 2);
+        assert_eq!(exec_dec_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick), 2);
         assert_eq!(cpu.registers.bc, 0x1233);
     }
 
@@ -109,7 +126,7 @@ mod tests {
     fn test_dec_r16_wrap() {
         let mut cpu = init_cpu_state();
         cpu.registers.bc = 0x0000;
-        assert_eq!(exec_dec_r16(&mut cpu, R16Register::BC), 2);
+        assert_eq!(exec_dec_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick), 2);
         assert_eq!(cpu.registers.bc, 0xFFFF);
     }
 
@@ -120,7 +137,7 @@ mod tests {
         cpu.registers.f_mut().set_zero(true);
         cpu.registers.f_mut().set_carry(true);
         cpu.registers.hl = 0x1000;
-        exec_inc_r16(&mut cpu, R16Register::HL);
+        exec_inc_r16(&mut cpu, R16Register::HL, &mut [0u8; 128], &mut noop_tick);
         assert!(cpu.registers.f().is_zero());
         assert!(cpu.registers.f().is_carry());
     }
@@ -134,7 +151,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         let mut bus = make_bus();
         cpu.registers.set_b(0x10);
-        assert_eq!(exec_inc_r8(&mut cpu, &mut bus, R8Register::B), 1);
+        assert_eq!(exec_inc_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick), 1);
         assert_eq!(cpu.registers.b(), 0x11);
         assert!(!cpu.registers.f().is_zero());
         assert!(!cpu.registers.f().is_subtraction());
@@ -147,7 +164,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         let mut bus = make_bus();
         cpu.registers.set_b(0x0F);
-        exec_inc_r8(&mut cpu, &mut bus, R8Register::B);
+        exec_inc_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
         assert_eq!(cpu.registers.b(), 0x10);
         assert!(cpu.registers.f().is_half_carry());
         assert!(!cpu.registers.f().is_zero());
@@ -159,7 +176,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         let mut bus = make_bus();
         cpu.registers.set_b(0xFF);
-        exec_inc_r8(&mut cpu, &mut bus, R8Register::B);
+        exec_inc_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
         assert_eq!(cpu.registers.b(), 0x00);
         assert!(cpu.registers.f().is_zero());
         assert!(cpu.registers.f().is_half_carry());
@@ -172,7 +189,7 @@ mod tests {
         let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         bus.write(0xC000, 0x41);
-        assert_eq!(exec_inc_r8(&mut cpu, &mut bus, R8Register::HL), 3);
+        assert_eq!(exec_inc_r8(&mut cpu, &mut bus, R8Register::HL, &mut noop_tick), 3);
         assert_eq!(bus.read(0xC000), 0x42);
     }
 
@@ -185,7 +202,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         let mut bus = make_bus();
         cpu.registers.set_b(0x10);
-        assert_eq!(exec_dec_r8(&mut cpu, &mut bus, R8Register::B), 1);
+        assert_eq!(exec_dec_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick), 1);
         assert_eq!(cpu.registers.b(), 0x0F);
         assert!(!cpu.registers.f().is_zero());
         assert!(cpu.registers.f().is_subtraction());
@@ -198,7 +215,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         let mut bus = make_bus();
         cpu.registers.set_b(0x01);
-        exec_dec_r8(&mut cpu, &mut bus, R8Register::B);
+        exec_dec_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
         assert_eq!(cpu.registers.b(), 0x00);
         assert!(cpu.registers.f().is_zero());
         assert!(cpu.registers.f().is_subtraction());
@@ -211,7 +228,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         let mut bus = make_bus();
         cpu.registers.set_b(0x00);
-        exec_dec_r8(&mut cpu, &mut bus, R8Register::B);
+        exec_dec_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
         assert_eq!(cpu.registers.b(), 0xFF);
         assert!(!cpu.registers.f().is_zero());
         assert!(cpu.registers.f().is_subtraction());
@@ -225,7 +242,7 @@ mod tests {
         let mut bus = make_bus();
         cpu.registers.hl = 0xC000;
         bus.write(0xC000, 0x43);
-        assert_eq!(exec_dec_r8(&mut cpu, &mut bus, R8Register::HL), 3);
+        assert_eq!(exec_dec_r8(&mut cpu, &mut bus, R8Register::HL, &mut noop_tick), 3);
         assert_eq!(bus.read(0xC000), 0x42);
     }
 
@@ -238,7 +255,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.hl = 0x1000;
         cpu.registers.bc = 0x2000;
-        assert_eq!(exec_add_hl_r16(&mut cpu, R16Register::BC), 2);
+        assert_eq!(exec_add_hl_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick), 2);
         assert_eq!(cpu.registers.hl, 0x3000);
         assert!(!cpu.registers.f().is_half_carry());
         assert!(!cpu.registers.f().is_carry());
@@ -250,7 +267,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.hl = 0xFFFF;
         cpu.registers.bc = 0x0001;
-        exec_add_hl_r16(&mut cpu, R16Register::BC);
+        exec_add_hl_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick);
         assert_eq!(cpu.registers.hl, 0x0000);
         assert!(cpu.registers.f().is_carry());
     }
@@ -260,7 +277,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.hl = 0x0FFF;
         cpu.registers.bc = 0x0001;
-        exec_add_hl_r16(&mut cpu, R16Register::BC);
+        exec_add_hl_r16(&mut cpu, R16Register::BC, &mut [0u8; 128], &mut noop_tick);
         assert_eq!(cpu.registers.hl, 0x1000);
         assert!(cpu.registers.f().is_half_carry());
         assert!(!cpu.registers.f().is_carry());
@@ -273,7 +290,7 @@ mod tests {
         cpu.registers.f_mut().set_zero(true);
         cpu.registers.hl = 0x0001;
         cpu.registers.de = 0x0001;
-        exec_add_hl_r16(&mut cpu, R16Register::DE);
+        exec_add_hl_r16(&mut cpu, R16Register::DE, &mut [0u8; 128], &mut noop_tick);
         assert!(cpu.registers.f().is_zero(), "zero flag must be preserved");
     }
 
@@ -282,7 +299,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.hl = 0x1000;
         cpu.registers.sp = 0x2000;
-        exec_add_hl_r16(&mut cpu, R16Register::SP);
+        exec_add_hl_r16(&mut cpu, R16Register::SP, &mut [0u8; 128], &mut noop_tick);
         assert_eq!(cpu.registers.hl, 0x3000);
     }
 
@@ -291,7 +308,7 @@ mod tests {
         // ADD HL, HL — HL is both source and destination
         let mut cpu = init_cpu_state();
         cpu.registers.hl = 0x1000;
-        exec_add_hl_r16(&mut cpu, R16Register::HL);
+        exec_add_hl_r16(&mut cpu, R16Register::HL, &mut [0u8; 128], &mut noop_tick);
         assert_eq!(cpu.registers.hl, 0x2000);
     }
 }

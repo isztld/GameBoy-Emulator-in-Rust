@@ -5,8 +5,9 @@ use crate::cpu::instructions::R8Register;
 use crate::cpu::exec::register_utils::get_r8;
 
 /// Execute ADD A, r8
-pub fn exec_add_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_add_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a.wrapping_add(val);
     cpu_state.registers.set_a(result);
@@ -18,8 +19,9 @@ pub fn exec_add_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 }
 
 /// Execute ADC A, r8
-pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_add(val).wrapping_add(old_c);
@@ -32,8 +34,9 @@ pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 }
 
 /// Execute SUB A, r8
-pub fn exec_sub_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_sub_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(val);
     cpu_state.registers.set_a(result);
@@ -45,8 +48,9 @@ pub fn exec_sub_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 }
 
 /// Execute SBC A, r8
-pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_sub(val).wrapping_sub(old_c);
@@ -61,8 +65,9 @@ pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 }
 
 /// Execute AND A, r8
-pub fn exec_and_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_and_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a & val;
     cpu_state.registers.set_a(result);
@@ -74,8 +79,9 @@ pub fn exec_and_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 }
 
 /// Execute XOR A, r8
-pub fn exec_xor_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_xor_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a ^ val;
     cpu_state.registers.set_a(result);
@@ -87,8 +93,9 @@ pub fn exec_xor_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
 }
 
 /// Execute OR A, r8
-pub fn exec_or_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_or_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a | val;
     cpu_state.registers.set_a(result);
@@ -100,8 +107,9 @@ pub fn exec_or_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
 }
 
 /// Execute CP A, r8
-pub fn exec_cp_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_cp_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(val);
     cpu_state.registers.f_mut().set_zero(result == 0);
@@ -112,7 +120,7 @@ pub fn exec_cp_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
 }
 
 /// Execute ADD A, d8
-pub fn exec_add_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_add_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a.wrapping_add(value);
     cpu_state.registers.set_a(result);
@@ -120,11 +128,12 @@ pub fn exec_add_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (value & 0x0F) > 0x0F);
     cpu_state.registers.f_mut().set_carry(result < a);
+    tick(io);
     2
 }
 
 /// Execute ADC A, d8
-pub fn exec_adc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_adc_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_add(value).wrapping_add(old_c);
@@ -133,11 +142,12 @@ pub fn exec_adc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (value & 0x0F) + old_c as u8 > 0x0F);
     cpu_state.registers.f_mut().set_carry((a as u16) + (value as u16) + (old_c as u16) > 0xFF);
+    tick(io);
     2
 }
 
 /// Execute SUB A, d8
-pub fn exec_sub_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_sub_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(value);
     cpu_state.registers.set_a(result);
@@ -145,11 +155,12 @@ pub fn exec_sub_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < value);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (value & 0x0F));
+    tick(io);
     2
 }
 
 /// Execute SBC A, d8
-pub fn exec_sbc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_sbc_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_sub(value).wrapping_sub(old_c);
@@ -159,11 +170,12 @@ pub fn exec_sbc_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     let borrow = value as u16 + old_c as u16;
     cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
     cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (value as u32 & 0xF) + old_c as u32);
+    tick(io);
     2
 }
 
 /// Execute AND A, d8
-pub fn exec_and_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_and_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a & value;
     cpu_state.registers.set_a(result);
@@ -171,11 +183,12 @@ pub fn exec_and_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(true);
     cpu_state.registers.f_mut().set_carry(false);
+    tick(io);
     2
 }
 
 /// Execute XOR A, d8
-pub fn exec_xor_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_xor_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a ^ value;
     cpu_state.registers.set_a(result);
@@ -183,11 +196,12 @@ pub fn exec_xor_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
     cpu_state.registers.f_mut().set_carry(false);
+    tick(io);
     2
 }
 
 /// Execute OR A, d8
-pub fn exec_or_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_or_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a | value;
     cpu_state.registers.set_a(result);
@@ -195,17 +209,19 @@ pub fn exec_or_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
     cpu_state.registers.f_mut().set_carry(false);
+    tick(io);
     2
 }
 
 /// Execute CP A, d8
-pub fn exec_cp_a_imm8(cpu_state: &mut CPUState, value: u8) -> u32 {
+pub fn exec_cp_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(value);
     cpu_state.registers.f_mut().set_zero(result == 0);
     cpu_state.registers.f_mut().set_subtraction(true);
     cpu_state.registers.f_mut().set_carry(a < value);
     cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (value & 0x0F));
+    tick(io);
     2
 }
 
@@ -226,13 +242,15 @@ mod tests {
         cpu
     }
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     #[test]
     fn test_add_a_r8_no_carry() {
         let mut cpu = init_cpu_state(0x10);
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x20);
 
-        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x30);
@@ -248,7 +266,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x00);
 
-        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x00);
@@ -264,7 +282,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x01);
 
-        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x00);
@@ -278,7 +296,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x01);
 
-        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_add_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x10);
@@ -292,7 +310,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x20);
 
-        let cycles = exec_adc_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_adc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x30);
@@ -306,7 +324,7 @@ mod tests {
         cpu.registers.set_b(0x20);
         cpu.registers.f_mut().set_carry(true);
 
-        let cycles = exec_adc_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_adc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x31); // 10 + 20 + 1
@@ -318,7 +336,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x30);
 
-        let cycles = exec_sub_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_sub_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x20);
@@ -332,7 +350,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x20);
 
-        let cycles = exec_sub_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_sub_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0xF0);
@@ -346,7 +364,7 @@ mod tests {
         cpu.registers.set_b(0x30);
         cpu.registers.f_mut().set_carry(true); // set initial carry
 
-        let cycles = exec_sbc_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_sbc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x1F); // 50 - 30 - 1
@@ -359,7 +377,7 @@ mod tests {
         cpu.registers.set_b(0x30);
         cpu.registers.f_mut().set_carry(true);
 
-        let cycles = exec_sbc_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_sbc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x1F); // 50 - 30 - 2
@@ -371,7 +389,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x0F);
 
-        let cycles = exec_and_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_and_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x0F);
@@ -387,7 +405,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x00);
 
-        let cycles = exec_and_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_and_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x00);
@@ -400,7 +418,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x0F);
 
-        let cycles = exec_xor_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_xor_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0xF0);
@@ -413,7 +431,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x5A);
 
-        let cycles = exec_xor_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_xor_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x00);
@@ -426,7 +444,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x0F);
 
-        let cycles = exec_or_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_or_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0xFF);
@@ -439,7 +457,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x00);
 
-        let cycles = exec_or_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_or_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert_eq!(cpu.registers.a(), 0x00);
@@ -452,7 +470,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x50);
 
-        let cycles = exec_cp_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_cp_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert!(cpu.registers.f().is_zero());
@@ -468,7 +486,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x50);
 
-        let cycles = exec_cp_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_cp_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         assert!(!cpu.registers.f().is_zero());
@@ -481,7 +499,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x20);
 
-        let cycles = exec_cp_a_r8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_cp_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 1);
         // In signed comparison, 0x10 < 0x20, so carry should be set
@@ -492,7 +510,7 @@ mod tests {
     fn test_add_a_imm8() {
         let mut cpu = init_cpu_state(0x10);
 
-        let cycles = exec_add_a_imm8(&mut cpu, 0x20);
+        let cycles = exec_add_a_imm8(&mut cpu, 0x20, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0x30);
@@ -503,7 +521,7 @@ mod tests {
     fn test_adc_a_imm8() {
         let mut cpu = init_cpu_state(0x10);
 
-        let cycles = exec_adc_a_imm8(&mut cpu, 0x20);
+        let cycles = exec_adc_a_imm8(&mut cpu, 0x20, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0x30);
@@ -514,7 +532,7 @@ mod tests {
         let mut cpu = init_cpu_state(0x10);
         cpu.registers.f_mut().set_carry(true);
 
-        let cycles = exec_adc_a_imm8(&mut cpu, 0x20);
+        let cycles = exec_adc_a_imm8(&mut cpu, 0x20, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0x31);
@@ -524,7 +542,7 @@ mod tests {
     fn test_sub_a_imm8() {
         let mut cpu = init_cpu_state(0x50);
 
-        let cycles = exec_sub_a_imm8(&mut cpu, 0x30);
+        let cycles = exec_sub_a_imm8(&mut cpu, 0x30, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0x20);
@@ -535,7 +553,7 @@ mod tests {
     fn test_sbc_a_imm8() {
         let mut cpu = init_cpu_state(0x50);
 
-        let cycles = exec_sbc_a_imm8(&mut cpu, 0x30);
+        let cycles = exec_sbc_a_imm8(&mut cpu, 0x30, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0x20);
@@ -545,7 +563,7 @@ mod tests {
     fn test_and_a_imm8() {
         let mut cpu = init_cpu_state(0xFF);
 
-        let cycles = exec_and_a_imm8(&mut cpu, 0x0F);
+        let cycles = exec_and_a_imm8(&mut cpu, 0x0F, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0x0F);
@@ -556,7 +574,7 @@ mod tests {
     fn test_xor_a_imm8() {
         let mut cpu = init_cpu_state(0xFF);
 
-        let cycles = exec_xor_a_imm8(&mut cpu, 0x0F);
+        let cycles = exec_xor_a_imm8(&mut cpu, 0x0F, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0xF0);
@@ -566,7 +584,7 @@ mod tests {
     fn test_or_a_imm8() {
         let mut cpu = init_cpu_state(0xF0);
 
-        let cycles = exec_or_a_imm8(&mut cpu, 0x0F);
+        let cycles = exec_or_a_imm8(&mut cpu, 0x0F, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.a(), 0xFF);
@@ -576,7 +594,7 @@ mod tests {
     fn test_cp_a_imm8() {
         let mut cpu = init_cpu_state(0x50);
 
-        let cycles = exec_cp_a_imm8(&mut cpu, 0x50);
+        let cycles = exec_cp_a_imm8(&mut cpu, 0x50, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert!(cpu.registers.f().is_zero());

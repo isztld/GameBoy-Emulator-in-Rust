@@ -93,14 +93,45 @@ impl VideoController {
         }
     }
 
-    /// Update PPU mode and state
+    /// Advance the PPU state machine by one machine cycle using only the I/O
+    /// register array (bus.io).  This is the hot path called once per M-cycle
+    /// during instruction execution; OAM DMA is handled separately via
+    /// `update()` which still takes the full bus.
+    ///
+    /// Writes IF bit 0 (VBlank) directly into io[0x0F] and keeps LY (io[0x44])
+    /// and STAT mode bits (io[0x41]) up to date.
+    pub fn tick_io(&mut self, io: &mut [u8; 128]) {
+        self.advance_mode(io);
+        self.update_stat();
+        // Sync LY and STAT bits 0-2 to the I/O array so the CPU sees current
+        // values on every subsequent bus read within the same instruction.
+        io[0x44] = self.ly;
+        io[0x41] = 0x80 | (io[0x41] & 0x78) | (self.stat & 0x07);
+    }
+
+    /// Advance the PPU by one machine cycle, including OAM DMA.
+    /// This is equivalent to calling `tick_io(&mut bus.io)` followed by an
+    /// OAM DMA check.  Used by tests and any call-site that has full bus
+    /// access; System::step() uses `tick_io` directly inside the tick closure
+    /// and calls `handle_oam_dma` separately.
     pub fn update(&mut self, bus: &mut MemoryBus) {
-        // Handle OAM DMA
         if self.oam_dma_active {
             self.perform_oam_dma(bus);
         }
+        self.tick_io(&mut bus.io);
+    }
 
-        // Update mode based on clock cycles
+    /// Perform any pending OAM DMA transfer without advancing the state
+    /// machine.  Called from System::step() after the per-cycle tick closure
+    /// has already run `tick_io()`.
+    pub fn handle_oam_dma(&mut self, bus: &mut MemoryBus) {
+        if self.oam_dma_active {
+            self.perform_oam_dma(bus);
+        }
+    }
+
+    /// Inner mode state-machine step shared by tick_io and update.
+    fn advance_mode(&mut self, io: &mut [u8; 128]) {
         // Total mode cycle counts:
         // - OamScan: 20 cycles
         // - PixelTransfer: 43 cycles
@@ -128,9 +159,8 @@ impl VideoController {
                     self.mode_clock = 0;
                     if self.ly >= 144 {
                         self.mode = PpuMode::VBlank;
-                        // Set VBlank interrupt (bit 0 of IF)
-                        let if_val = bus.read(0xFF0F);
-                        bus.write(0xFF0F, if_val | 0x01);
+                        // Set VBlank interrupt (bit 0 of IF).
+                        io[0x0F] = 0xE0 | ((io[0x0F] | 0x01) & 0x1F);
                     } else {
                         self.mode = PpuMode::OamScan;
                     }
@@ -144,14 +174,12 @@ impl VideoController {
                     if self.ly > 153 {
                         self.ly = 0;
                         self.mode = PpuMode::OamScan;
-                        // Do NOT clear IF bit 0 here — the CPU clears it when servicing the interrupt
+                        // Do NOT clear IF bit 0 here — the CPU clears it when
+                        // servicing the interrupt.
                     }
                 }
             }
         }
-
-        // Update STAT register
-        self.update_stat();
     }
 
     fn update_stat(&mut self) {

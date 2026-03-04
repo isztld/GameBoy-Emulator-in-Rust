@@ -4,16 +4,20 @@ use crate::cpu::CPUState;
 use crate::cpu::instructions::Condition;
 
 /// Execute JR r8
-pub fn exec_jr_imm8(cpu_state: &mut CPUState, offset: i8) -> u32 {
+pub fn exec_jr_imm8(cpu_state: &mut CPUState, offset: i8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     cpu_state.registers.pc = cpu_state.registers.pc.wrapping_add(offset as i32 as u16);
+    tick(io); // simulated offset read
+    tick(io); // internal delay
     3
 }
 
 /// Execute JR cc, r8
-pub fn exec_jr_cond_imm8(cpu_state: &mut CPUState, cond: Condition, offset: i8) -> u32 {
+pub fn exec_jr_cond_imm8(cpu_state: &mut CPUState, cond: Condition, offset: i8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let jump = cond_condition(cpu_state, cond);
+    tick(io); // offset read always happens
     if jump {
         cpu_state.registers.pc = cpu_state.registers.pc.wrapping_add(offset as i32 as u16);
+        tick(io); // internal delay only if taken
         3
     } else {
         2
@@ -21,18 +25,26 @@ pub fn exec_jr_cond_imm8(cpu_state: &mut CPUState, cond: Condition, offset: i8) 
 }
 
 /// Execute JP cc, a16
-pub fn exec_jp_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: u16) -> u32 {
+pub fn exec_jp_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: u16, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     if cond_condition(cpu_state, cond) {
         cpu_state.registers.pc = address;
+        tick(io); // addr low read
+        tick(io); // addr high read
+        tick(io); // internal delay
         4
     } else {
+        tick(io); // addr low read
+        tick(io); // addr high read
         3
     }
 }
 
 /// Execute JP a16
-pub fn exec_jp_imm16(cpu_state: &mut CPUState, address: u16) -> u32 {
+pub fn exec_jp_imm16(cpu_state: &mut CPUState, address: u16, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     cpu_state.registers.pc = address;
+    tick(io); // addr low read
+    tick(io); // addr high read
+    tick(io); // internal delay
     4
 }
 
@@ -43,45 +55,61 @@ pub fn exec_jp_hl(cpu_state: &mut CPUState) -> u32 {
 }
 
 /// Execute CALL cc, a16
-pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: u16, bus: &mut MemoryBus) -> u32 {
+pub fn exec_call_cond_imm16(cpu_state: &mut CPUState, cond: Condition, address: u16, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     if cond_condition(cpu_state, cond) {
+        tick(&mut bus.io); // simulated addr low read
+        tick(&mut bus.io); // simulated addr high read
         let sp = cpu_state.registers.sp;
         // PC has already been advanced past the instruction's operand bytes by the
         // caller, so it holds the correct return address (the byte after CALL).
         let return_pc = cpu_state.registers.pc;
+        tick(&mut bus.io); // internal delay before writes
         bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);     // high byte
+        tick(&mut bus.io);
         bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8); // low byte
+        tick(&mut bus.io);
         cpu_state.registers.sp = sp.wrapping_sub(2);
         cpu_state.registers.pc = address;
         6
     } else {
+        tick(&mut bus.io); // simulated addr low read
+        tick(&mut bus.io); // simulated addr high read
         3
     }
 }
 
 /// Execute CALL a16
-pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryBus) -> u32 {
+pub fn exec_call_imm16(cpu_state: &mut CPUState, address: u16, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // simulated addr low read
+    tick(&mut bus.io); // simulated addr high read
     let sp = cpu_state.registers.sp;
     // PC has already been advanced past the instruction's operand bytes by the
     // caller, so it holds the correct return address (the byte after CALL).
     let return_pc = cpu_state.registers.pc;
+    tick(&mut bus.io); // internal delay before writes
     bus.write(sp.wrapping_sub(1), (return_pc >> 8) as u8);     // high byte
+    tick(&mut bus.io);
     bus.write(sp.wrapping_sub(2), (return_pc & 0x00FF) as u8); // low byte
+    tick(&mut bus.io);
     cpu_state.registers.sp = sp.wrapping_sub(2);
     cpu_state.registers.pc = address;
     6
 }
 
 /// Execute RET cc
-pub fn exec_ret_cond(cpu_state: &mut CPUState, cond: Condition, bus: &mut MemoryBus) -> u32 {
+pub fn exec_ret_cond(cpu_state: &mut CPUState, cond: Condition, bus: &mut MemoryBus, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     if cond_condition(cpu_state, cond) {
         let sp = cpu_state.registers.sp;
         let low = bus.read(sp);
+        tick(&mut bus.io);
         let high = bus.read(sp.wrapping_add(1));
+        tick(&mut bus.io);
         cpu_state.registers.sp = sp.wrapping_add(2);
         cpu_state.registers.pc = ((high as u16) << 8) | (low as u16);
+        tick(&mut bus.io); // internal delay
         5
     } else {
+        tick(&mut bus.io); // internal delay for condition check
         2
     }
 }
@@ -111,12 +139,14 @@ mod tests {
         cpu
     }
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     #[test]
     fn test_jr_imm8_positive() {
         let mut cpu = init_cpu_state();
         cpu.registers.pc = 0x1000;
 
-        let cycles = exec_jr_imm8(&mut cpu, 5);
+        let cycles = exec_jr_imm8(&mut cpu, 5, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.pc, 0x1005);
@@ -127,7 +157,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.pc = 0x1000;
 
-        let cycles = exec_jr_imm8(&mut cpu, -5);
+        let cycles = exec_jr_imm8(&mut cpu, -5, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.pc, 0x0FFB);
@@ -138,7 +168,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.pc = 0x1000;
 
-        let cycles = exec_jr_imm8(&mut cpu, 127);
+        let cycles = exec_jr_imm8(&mut cpu, 127, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.pc, 0x107F);
@@ -150,7 +180,7 @@ mod tests {
         cpu.registers.pc = 0x1000;
         cpu.registers.f_mut().set_zero(false);
 
-        let cycles = exec_jr_cond_imm8(&mut cpu, Condition::NZ, 5);
+        let cycles = exec_jr_cond_imm8(&mut cpu, Condition::NZ, 5, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.pc, 0x1005);
@@ -162,7 +192,7 @@ mod tests {
         cpu.registers.pc = 0x1000;
         cpu.registers.f_mut().set_zero(true);
 
-        let cycles = exec_jr_cond_imm8(&mut cpu, Condition::NZ, 5);
+        let cycles = exec_jr_cond_imm8(&mut cpu, Condition::NZ, 5, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.pc, 0x1000);
@@ -173,7 +203,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.f_mut().set_zero(false);
 
-        let cycles = exec_jp_cond_imm16(&mut cpu, Condition::NZ, 0x8000);
+        let cycles = exec_jp_cond_imm16(&mut cpu, Condition::NZ, 0x8000, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -184,7 +214,7 @@ mod tests {
         let mut cpu = init_cpu_state();
         cpu.registers.f_mut().set_zero(true);
 
-        let cycles = exec_jp_cond_imm16(&mut cpu, Condition::NZ, 0x8000);
+        let cycles = exec_jp_cond_imm16(&mut cpu, Condition::NZ, 0x8000, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.pc, 0x0000);
@@ -194,7 +224,7 @@ mod tests {
     fn test_jp_imm16() {
         let mut cpu = init_cpu_state();
 
-        let cycles = exec_jp_imm16(&mut cpu, 0x8000);
+        let cycles = exec_jp_imm16(&mut cpu, 0x8000, &mut [0u8; 128], &mut noop_tick);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -219,7 +249,7 @@ mod tests {
         cpu.registers.f_mut().set_zero(false);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_call_cond_imm16(&mut cpu, Condition::NZ, 0x8000, &mut bus);
+        let cycles = exec_call_cond_imm16(&mut cpu, Condition::NZ, 0x8000, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 6);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -237,7 +267,7 @@ mod tests {
         cpu.registers.f_mut().set_zero(true);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_call_cond_imm16(&mut cpu, Condition::NZ, 0x8000, &mut bus);
+        let cycles = exec_call_cond_imm16(&mut cpu, Condition::NZ, 0x8000, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 3);
         assert_eq!(cpu.registers.pc, 0x1000);
@@ -251,7 +281,7 @@ mod tests {
         cpu.registers.pc = 0x1003;
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_call_imm16(&mut cpu, 0x8000, &mut bus);
+        let cycles = exec_call_imm16(&mut cpu, 0x8000, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 6);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -270,7 +300,7 @@ mod tests {
         bus.write(0xFFFD, 0x80); // high byte
         cpu.registers.f_mut().set_zero(false);
 
-        let cycles = exec_ret_cond(&mut cpu, Condition::NZ, &mut bus);
+        let cycles = exec_ret_cond(&mut cpu, Condition::NZ, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 5);
         assert_eq!(cpu.registers.pc, 0x8000);
@@ -287,7 +317,7 @@ mod tests {
         bus.write(0xFFFD, 0x80); // high byte
         cpu.registers.f_mut().set_zero(true);
 
-        let cycles = exec_ret_cond(&mut cpu, Condition::NZ, &mut bus);
+        let cycles = exec_ret_cond(&mut cpu, Condition::NZ, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert_eq!(cpu.registers.pc, 0x0000);

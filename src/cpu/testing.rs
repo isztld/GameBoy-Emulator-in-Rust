@@ -120,7 +120,8 @@ pub fn run_test_case(test: &TestCase) -> Result<(), String> {
     cpu.state_mut().registers.pc = pc.wrapping_add(opcode_bytes as u16 - 1);
 
     // Execute the instruction (jumps/calls override PC to their target).
-    execute_instruction(cpu.state_mut(), &mut bus, instruction);
+    fn noop_tick(_: &mut [u8; 128]) {}
+    execute_instruction(cpu.state_mut(), &mut bus, instruction, &mut noop_tick);
 
     // Prefetch cycle: every instruction's final M-cycle reads the next opcode byte,
     // incrementing PC by 1 regardless of whether a jump was taken.

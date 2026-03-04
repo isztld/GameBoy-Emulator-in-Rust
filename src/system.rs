@@ -110,7 +110,32 @@ impl System {
         //   - spins for 1 cycle if halted/stopped, or
         //   - fetches, decodes, and executes one instruction.
         // It returns the number of machine cycles consumed.
-        let machine_cycles = self.cpu.execute(&mut self.mmu);
+        //
+        // The tick closure is called once per M-cycle during instruction
+        // execution.  Timer and PPU can be ticked via the io slice alone;
+        // APU::clock() needs no bus access at all.  Rust's split-borrow rules
+        // allow `cpu`, `mmu`, `ppu`, `timer`, and `apu` to be borrowed
+        // independently here.
+        let machine_cycles = {
+            let Self { cpu, mmu, ppu, timer, apu, .. } = self;
+
+            let mut tick = |io: &mut [u8; 128]| {
+                timer.tick(io);
+                ppu.tick_io(io);
+                apu.clock();
+            };
+
+            cpu.execute(mmu, &mut tick)
+        };
+
+        // OAM DMA: an instantaneous bus-level copy (hardware takes 160 cycles;
+        // we approximate as instant).  The per-cycle PPU state machine has
+        // already been driven by tick_io() in the closure above.
+        self.ppu.handle_oam_dma(&mut self.mmu);
+
+        // Sync PPU's LY and STAT to MMU I/O so CPU reads see current values.
+        self.mmu.update_ly(self.ppu.get_ly());
+        self.mmu.update_ppu_stat(self.ppu.read_stat());
 
         // Drain any timer register writes that the CPU made this step.
         // The Timer struct is the authoritative source for timer state; writes
@@ -181,26 +206,6 @@ impl System {
             file.lock().unwrap().write_all(line.as_bytes()).ok();
         }
         } // end !was_spinning
-
-        // Tick every peripheral once per machine cycle.
-        // Order: Timer → PPU → APU, matching hardware timing dependencies.
-        for _ in 0..machine_cycles {
-            // Timer::tick increments DIV/TIMA at the correct rates and writes
-            // bit 2 of IF (0xFF0F) on TIMA overflow.
-            self.timer.tick(&mut self.mmu);
-
-            // VideoController::update advances the PPU state machine by one
-            // machine cycle and writes IF bit 0 (VBlank) or bit 1 (STAT) as
-            // appropriate.
-            self.ppu.update(&mut self.mmu);
-
-            // Sync PPU's LY and STAT to MMU I/O so CPU reads see current values.
-            self.mmu.update_ly(self.ppu.get_ly());
-            self.mmu.update_ppu_stat(self.ppu.read_stat());
-
-            // AudioProcessor::clock advances the APU sequencer.
-            self.apu.clock();
-        }
 
         // VBlank is signalled by bit 0 of IF being set by the PPU.
         // We check after all ticks so the flag is visible this same step.

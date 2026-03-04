@@ -6,27 +6,30 @@ use crate::cpu::instructions::R8Register;
 use crate::cpu::exec::register_utils::{get_r8, set_r8};
 
 /// Execute a CB-prefixed instruction
-pub fn execute_cb(cpu_state: &mut CPUState, bus: &mut MemoryBus, cb_instr: CBInstruction) -> u32 {
+pub fn execute_cb(cpu_state: &mut CPUState, bus: &mut MemoryBus, cb_instr: CBInstruction, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     match cb_instr {
-        CBInstruction::RLCR8 { reg } => exec_rlcr8(cpu_state, bus, reg),
-        CBInstruction::RRCR8 { reg } => exec_rrcr8(cpu_state, bus, reg),
-        CBInstruction::RLR8 { reg } => exec_rlr8(cpu_state, bus, reg),
-        CBInstruction::RRR8 { reg } => exec_rrr8(cpu_state, bus, reg),
-        CBInstruction::SLAR8 { reg } => exec_slar8(cpu_state, bus, reg),
-        CBInstruction::SRAR8 { reg } => exec_srar8(cpu_state, bus, reg),
-        CBInstruction::SWAPR8 { reg } => exec_swapr8(cpu_state, bus, reg),
-        CBInstruction::SRLR8 { reg } => exec_srlr8(cpu_state, bus, reg),
-        CBInstruction::BITBR8 { bit, reg } => exec_bitbr8(cpu_state, bus, bit, reg),
-        CBInstruction::RESBR8 { bit, reg } => exec_resbr8(cpu_state, bus, bit, reg),
-        CBInstruction::SETBR8 { bit, reg } => exec_setbr8(cpu_state, bus, bit, reg),
+        CBInstruction::RLCR8 { reg } => exec_rlcr8(cpu_state, bus, reg, tick),
+        CBInstruction::RRCR8 { reg } => exec_rrcr8(cpu_state, bus, reg, tick),
+        CBInstruction::RLR8 { reg } => exec_rlr8(cpu_state, bus, reg, tick),
+        CBInstruction::RRR8 { reg } => exec_rrr8(cpu_state, bus, reg, tick),
+        CBInstruction::SLAR8 { reg } => exec_slar8(cpu_state, bus, reg, tick),
+        CBInstruction::SRAR8 { reg } => exec_srar8(cpu_state, bus, reg, tick),
+        CBInstruction::SWAPR8 { reg } => exec_swapr8(cpu_state, bus, reg, tick),
+        CBInstruction::SRLR8 { reg } => exec_srlr8(cpu_state, bus, reg, tick),
+        CBInstruction::BITBR8 { bit, reg } => exec_bitbr8(cpu_state, bus, bit, reg, tick),
+        CBInstruction::RESBR8 { bit, reg } => exec_resbr8(cpu_state, bus, bit, reg, tick),
+        CBInstruction::SETBR8 { bit, reg } => exec_setbr8(cpu_state, bus, bit, reg, tick),
     }
 }
 
 /// Execute RLC r8
-pub fn exec_rlcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_rlcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let new_val = val.rotate_left(1);
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x80) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -35,10 +38,13 @@ pub fn exec_rlcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
 }
 
 /// Execute RRC r8
-pub fn exec_rrcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_rrcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let new_val = val.rotate_right(1);
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x01) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -47,11 +53,14 @@ pub fn exec_rrcr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
 }
 
 /// Execute RL r8
-pub fn exec_rlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_rlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let new_val = (val << 1) | old_c;
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x80) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -60,11 +69,14 @@ pub fn exec_rlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register)
 }
 
 /// Execute RR r8
-pub fn exec_rrr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_rrr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let new_val = (val >> 1) | (old_c << 7);
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x01) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -73,10 +85,13 @@ pub fn exec_rrr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register)
 }
 
 /// Execute SLA r8
-pub fn exec_slar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_slar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let new_val = val << 1;
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x80) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -85,10 +100,13 @@ pub fn exec_slar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
 }
 
 /// Execute SRA r8
-pub fn exec_srar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_srar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let new_val = (val as i8 >> 1) as u8;
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x01) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -97,10 +115,13 @@ pub fn exec_srar8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
 }
 
 /// Execute SWAP r8
-pub fn exec_swapr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_swapr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let new_val = (val >> 4) | (val << 4);
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(false);
@@ -109,10 +130,13 @@ pub fn exec_swapr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Registe
 }
 
 /// Execute SRL r8
-pub fn exec_srlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register) -> u32 {
+pub fn exec_srlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     let new_val = val >> 1;
     set_r8(&mut cpu_state.registers, bus, reg, new_val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     cpu_state.registers.f_mut().set_carry((val & 0x01) != 0);
     cpu_state.registers.f_mut().set_zero(new_val == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
@@ -121,8 +145,10 @@ pub fn exec_srlr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Register
 }
 
 /// Execute BIT b, r8
-pub fn exec_bitbr8(cpu_state: &mut CPUState, _bus: &mut MemoryBus, bit: u8, reg: R8Register) -> u32 {
-    let val = get_r8(&cpu_state.registers, _bus, reg);
+pub fn exec_bitbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
+    let val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read (no write for BIT)
     cpu_state.registers.f_mut().set_zero(((val >> bit) & 1) == 0);
     cpu_state.registers.f_mut().set_subtraction(false);
     cpu_state.registers.f_mut().set_half_carry(true);
@@ -130,18 +156,24 @@ pub fn exec_bitbr8(cpu_state: &mut CPUState, _bus: &mut MemoryBus, bit: u8, reg:
 }
 
 /// Execute RES b, r8
-pub fn exec_resbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: R8Register) -> u32 {
+pub fn exec_resbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let mut val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     val &= !(1 << bit);
     set_r8(&mut cpu_state.registers, bus, reg, val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     if reg == R8Register::HL { 4 } else { 2 }
 }
 
 /// Execute SET b, r8
-pub fn exec_setbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: R8Register) -> u32 {
+pub fn exec_setbr8(cpu_state: &mut CPUState, bus: &mut MemoryBus, bit: u8, reg: R8Register, tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
+    tick(&mut bus.io); // CB opcode byte read
     let mut val = get_r8(&cpu_state.registers, bus, reg);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL read
     val |= 1 << bit;
     set_r8(&mut cpu_state.registers, bus, reg, val);
+    if reg == R8Register::HL { tick(&mut bus.io); } // HL write
     if reg == R8Register::HL { 4 } else { 2 }
 }
 
@@ -160,13 +192,15 @@ mod tests {
         cpu
     }
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     #[test]
     fn test_rlcr8() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_b(0b11001111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rlcr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rlcr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Rotate left: 0b11001111 -> 0b10011111
@@ -182,7 +216,7 @@ mod tests {
         cpu.registers.set_b(0b00000001);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rlcr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rlcr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Rotate left: 0b00000001 -> 0b00000010
@@ -197,7 +231,7 @@ mod tests {
         cpu.registers.set_b(0b00000000);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rlcr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rlcr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Result is still 0
@@ -210,7 +244,7 @@ mod tests {
         cpu.registers.set_b(0b11001111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rrcr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rrcr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Rotate right: 0b11001111 -> 0b11100111
@@ -226,7 +260,7 @@ mod tests {
         cpu.registers.f_mut().set_carry(false);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rlr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rlr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Shift left with carry in: 0b11001111 << 1 = 0b10011110, carry out = 1
@@ -241,7 +275,7 @@ mod tests {
         cpu.registers.f_mut().set_carry(true);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rlr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rlr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Shift left with carry in: 0b01001111 << 1 = 0b10011110, OR carry = 0b10011111
@@ -256,7 +290,7 @@ mod tests {
         cpu.registers.f_mut().set_carry(false);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rrr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rrr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Shift right with carry in: 0b11001111 >> 1 = 0b01100111, carry out = 1
@@ -271,7 +305,7 @@ mod tests {
         cpu.registers.f_mut().set_carry(true);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_rrr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_rrr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Shift right with carry in: 0b01001111 >> 1 = 0b00100111, OR (carry << 7) = 0b10100111
@@ -285,7 +319,7 @@ mod tests {
         cpu.registers.set_b(0b11001111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_slar8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_slar8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Shift left: 0b11001111 << 1 = 0b10011110, carry out = 1
@@ -299,7 +333,7 @@ mod tests {
         cpu.registers.set_b(0b11001111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_srar8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_srar8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Arithmetic shift right (sign-extended): 0b11001111 >> 1 = 0b11100111
@@ -313,7 +347,7 @@ mod tests {
         cpu.registers.set_b(0b01001111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_srar8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_srar8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Arithmetic shift right: 0b01001111 >> 1 = 0b00100111
@@ -326,7 +360,7 @@ mod tests {
         cpu.registers.set_b(0x5A);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_swapr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_swapr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Swap nibbles: 0x5A -> 0xA5
@@ -342,7 +376,7 @@ mod tests {
         cpu.registers.set_b(0x00);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_swapr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_swapr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         assert!(cpu.registers.f().is_zero());
@@ -354,7 +388,7 @@ mod tests {
         cpu.registers.set_b(0b11001111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_srlr8(&mut cpu, &mut bus, R8Register::B);
+        let cycles = exec_srlr8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Logical shift right: 0b11001111 >> 1 = 0b01100111
@@ -368,7 +402,7 @@ mod tests {
         cpu.registers.set_b(0b10101010);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_bitbr8(&mut cpu, &mut bus, 1, R8Register::B);
+        let cycles = exec_bitbr8(&mut cpu, &mut bus, 1, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Bit 1 is 1
@@ -383,7 +417,7 @@ mod tests {
         cpu.registers.set_b(0b10101010);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_bitbr8(&mut cpu, &mut bus, 0, R8Register::B);
+        let cycles = exec_bitbr8(&mut cpu, &mut bus, 0, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Bit 0 is 0
@@ -397,7 +431,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
         for bit in 0..8 {
-            let cycles = exec_bitbr8(&mut cpu, &mut bus, bit, R8Register::B);
+            let cycles = exec_bitbr8(&mut cpu, &mut bus, bit, R8Register::B, &mut noop_tick);
             assert_eq!(cycles, 2);
             assert!(!cpu.registers.f().is_zero(), "Bit {} should be set", bit);
         }
@@ -413,7 +447,7 @@ mod tests {
 
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_bitbr8(&mut cpu, &mut bus, 0, R8Register::B);
+        let cycles = exec_bitbr8(&mut cpu, &mut bus, 0, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
 
@@ -436,7 +470,7 @@ mod tests {
         cpu.registers.set_b(0b11111111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_resbr8(&mut cpu, &mut bus, 3, R8Register::B);
+        let cycles = exec_resbr8(&mut cpu, &mut bus, 3, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Clear bit 3: 0b11111111 -> 0b11110111
@@ -449,10 +483,10 @@ mod tests {
         cpu.registers.set_b(0b11111111);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        exec_resbr8(&mut cpu, &mut bus, 0, R8Register::B);
-        exec_resbr8(&mut cpu, &mut bus, 2, R8Register::B);
-        exec_resbr8(&mut cpu, &mut bus, 4, R8Register::B);
-        exec_resbr8(&mut cpu, &mut bus, 6, R8Register::B);
+        exec_resbr8(&mut cpu, &mut bus, 0, R8Register::B, &mut noop_tick);
+        exec_resbr8(&mut cpu, &mut bus, 2, R8Register::B, &mut noop_tick);
+        exec_resbr8(&mut cpu, &mut bus, 4, R8Register::B, &mut noop_tick);
+        exec_resbr8(&mut cpu, &mut bus, 6, R8Register::B, &mut noop_tick);
 
         assert_eq!(cpu.registers.b(), 0b10101010);
     }
@@ -463,7 +497,7 @@ mod tests {
         cpu.registers.set_b(0b00000000);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_setbr8(&mut cpu, &mut bus, 3, R8Register::B);
+        let cycles = exec_setbr8(&mut cpu, &mut bus, 3, R8Register::B, &mut noop_tick);
 
         assert_eq!(cycles, 2);
         // Set bit 3: 0b00000000 -> 0b00001000
@@ -476,10 +510,10 @@ mod tests {
         cpu.registers.set_b(0b00000000);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        exec_setbr8(&mut cpu, &mut bus, 0, R8Register::B);
-        exec_setbr8(&mut cpu, &mut bus, 2, R8Register::B);
-        exec_setbr8(&mut cpu, &mut bus, 4, R8Register::B);
-        exec_setbr8(&mut cpu, &mut bus, 6, R8Register::B);
+        exec_setbr8(&mut cpu, &mut bus, 0, R8Register::B, &mut noop_tick);
+        exec_setbr8(&mut cpu, &mut bus, 2, R8Register::B, &mut noop_tick);
+        exec_setbr8(&mut cpu, &mut bus, 4, R8Register::B, &mut noop_tick);
+        exec_setbr8(&mut cpu, &mut bus, 6, R8Register::B, &mut noop_tick);
 
         // Set bits 0, 2, 4, 6: 0b00000000 -> 0b01010101
         assert_eq!(cpu.registers.b(), 0b01010101);

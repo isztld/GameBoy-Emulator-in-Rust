@@ -137,6 +137,8 @@ mod tests {
         }
     }
 
+    fn noop_tick(_: &mut [u8; 128]) {}
+
     #[test]
     fn test_normal_opcode_cycles() {
         let mut errors: Vec<String> = Vec::new();
@@ -152,7 +154,7 @@ mod tests {
             set_not_taken_flags(&mut cpu, opcode);
 
             let (instruction, _) = decode_instruction(&cpu, &bus, 0x0000, opcode);
-            let cycles = execute_instruction(&mut cpu, &mut bus, instruction);
+            let cycles = execute_instruction(&mut cpu, &mut bus, instruction, &mut noop_tick);
 
             if cycles != expected as u32 {
                 errors.push(format!(
@@ -185,7 +187,7 @@ mod tests {
             let mut cpu = make_cpu();
 
             let (instruction, _) = decode_instruction(&cpu, &bus, 0x0000, 0xCB);
-            let cycles = execute_instruction(&mut cpu, &mut bus, instruction);
+            let cycles = execute_instruction(&mut cpu, &mut bus, instruction, &mut noop_tick);
 
             if cycles != expected as u32 {
                 errors.push(format!(
