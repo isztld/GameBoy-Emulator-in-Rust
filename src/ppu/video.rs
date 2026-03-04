@@ -144,7 +144,17 @@ impl VideoController {
     ///
     /// Writes IF bit 0 (VBlank) directly into io[0x0F] and keeps LY (io[0x44])
     /// and STAT mode bits (io[0x41]) up to date.
+    ///
+    /// Also syncs LCDC/SCX/SCY from the I/O array so rendering sees the latest
+    /// values written by the CPU (critical for games that modify scroll regs
+    /// during VBlank to animate the next frame).
     pub fn tick_io(&mut self, io: &mut [u8; 128]) {
+        // Sync scroll/LCDC registers from bus.io[] — the CPU writes these
+        // directly to the I/O array, and they must be reflected in the PPU.
+        self.lcdc = Lcdc::new(io[0x40]);
+        self.scy = io[0x42];
+        self.scx = io[0x43];
+
         self.advance_mode(io);
         self.update_stat();
         // Sync LY and STAT bits 0-2 to the I/O array so the CPU sees current
