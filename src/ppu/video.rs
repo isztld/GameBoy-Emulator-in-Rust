@@ -38,24 +38,29 @@ impl Lcdc {
         self.0 & 0x20 != 0
     }
 
+    /// BG Tile Map Display Select: bit 3 (0=0x9800, 1=0x9C00)
     pub fn tile_map_select(&self) -> bool {
-        self.0 & 0x10 != 0
-    }
-
-    pub fn tile_data_select(&self) -> bool {
         self.0 & 0x08 != 0
     }
 
+    /// BG & Window Tile Data Select: bit 4 (0=0x8800 signed, 1=0x8000 unsigned)
+    pub fn tile_data_select(&self) -> bool {
+        self.0 & 0x10 != 0
+    }
+
+    /// BG & Window Display Enable: bit 0
     pub fn bg_tile_map_display(&self) -> bool {
-        self.0 & 0x04 != 0
-    }
-
-    pub fn obj_size(&self) -> usize {
-        if self.0 & 0x02 != 0 { 16 } else { 8 }
-    }
-
-    pub fn obj_display(&self) -> bool {
         self.0 & 0x01 != 0
+    }
+
+    /// OBJ (Sprite) Size: bit 2 (0=8x8, 1=8x16)
+    pub fn obj_size(&self) -> usize {
+        if self.0 & 0x04 != 0 { 16 } else { 8 }
+    }
+
+    /// OBJ Display Enable: bit 1
+    pub fn obj_display(&self) -> bool {
+        self.0 & 0x02 != 0
     }
 }
 
@@ -344,14 +349,17 @@ mod tests {
 
     #[test]
     fn test_lcdc_flags() {
+        // 0xF5 = 1111_0101
+        // bit7=1 bit6=1 bit5=1 bit4=1 bit3=0 bit2=1 bit1=0 bit0=1
         let lcdc = Lcdc::new(0xF5);
-        assert!(lcdc.is_enabled());
-        assert!(lcdc.window_tile_map_select());
-        assert!(lcdc.window_display());
-        assert!(lcdc.tile_map_select());
-        assert!(lcdc.bg_tile_map_display());
-        assert_eq!(lcdc.obj_size(), 8);
-        assert!(lcdc.obj_display());
+        assert!(lcdc.is_enabled());           // bit 7
+        assert!(lcdc.window_tile_map_select()); // bit 6
+        assert!(lcdc.window_display());        // bit 5
+        assert!(lcdc.tile_data_select());      // bit 4
+        assert!(!lcdc.tile_map_select());      // bit 3
+        assert_eq!(lcdc.obj_size(), 16);       // bit 2
+        assert!(!lcdc.obj_display());          // bit 1
+        assert!(lcdc.bg_tile_map_display());   // bit 0
     }
 
     #[test]
