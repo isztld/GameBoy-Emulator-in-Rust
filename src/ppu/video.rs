@@ -152,10 +152,11 @@ impl VideoController {
         // Sync scroll/LCDC registers from bus.io[] — the CPU writes these
         // directly to the I/O array, and they must be reflected in the PPU.
         self.lcdc = Lcdc::new(io[0x40]);
-        self.scy = io[0x42];
-        self.scx = io[0x43];
-        self.wy = io[0x4A]; // Window Y
-        self.wx = io[0x4B]; // Window X
+        self.scy  = io[0x42];
+        self.scx  = io[0x43];
+        self.lyc  = io[0x45]; // LYC must be synced so LY==LYC comparison is correct
+        self.wy   = io[0x4A]; // Window Y
+        self.wx   = io[0x4B]; // Window X
 
         self.advance_mode(io);
         self.update_stat();
@@ -207,6 +208,10 @@ impl VideoController {
                     self.mode_clock = 0;
                     self.mode = PpuMode::HBlank;
                     self.scanline_ready = true;
+                    // HBlank STAT interrupt (STAT bit 3).
+                    if io[0x41] & 0x08 != 0 {
+                        io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                    }
                 }
             }
             PpuMode::HBlank => {
@@ -214,13 +219,27 @@ impl VideoController {
                 if self.mode_clock >= 51 {
                     self.ly += 1;
                     self.mode_clock = 0;
+
+                    // LYC=LY STAT interrupt (STAT bit 6) on every LY update.
+                    if self.ly == self.lyc && io[0x41] & 0x40 != 0 {
+                        io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                    }
+
                     if self.ly >= 144 {
                         self.mode = PpuMode::VBlank;
                         self.vblank_entered = true;
-                        // Set VBlank interrupt (bit 0 of IF).
+                        // VBlank interrupt (IF bit 0).
                         io[0x0F] = 0xE0 | ((io[0x0F] | 0x01) & 0x1F);
+                        // VBlank STAT interrupt (STAT bit 4).
+                        if io[0x41] & 0x10 != 0 {
+                            io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                        }
                     } else {
                         self.mode = PpuMode::OamScan;
+                        // OAM-scan STAT interrupt (STAT bit 5).
+                        if io[0x41] & 0x20 != 0 {
+                            io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                        }
                     }
                 }
             }
@@ -229,9 +248,23 @@ impl VideoController {
                 if self.mode_clock >= 114 {
                     self.ly += 1;
                     self.mode_clock = 0;
+
+                    // LYC=LY check during VBlank lines 144–153.
+                    if self.ly == self.lyc && io[0x41] & 0x40 != 0 {
+                        io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                    }
+
                     if self.ly > 153 {
                         self.ly = 0;
                         self.mode = PpuMode::OamScan;
+                        // OAM-scan STAT interrupt for the first line of the new frame.
+                        if io[0x41] & 0x20 != 0 {
+                            io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                        }
+                        // LYC=LY check for LY=0.
+                        if self.lyc == 0 && io[0x41] & 0x40 != 0 {
+                            io[0x0F] = 0xE0 | ((io[0x0F] | 0x02) & 0x1F);
+                        }
                         // Do NOT clear IF bit 0 here — the CPU clears it when
                         // servicing the interrupt.
                     }

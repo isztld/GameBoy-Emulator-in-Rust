@@ -231,6 +231,11 @@ impl Renderer {
         let height = lcdc.obj_size(); // 8 or 16
         let tile_data_select = true; // sprites always use 0x8000-base addressing
 
+        // DMG priority: the sprite with the smallest OAM X value wins at each pixel.
+        // Ties are broken by lower OAM index (naturally handled by iterating 0→39
+        // and only overwriting with strictly-smaller X).
+        let mut pixel_x = [u8::MAX; 160];
+
         for i in 0..40usize {
             let base = i * 4;
             let sprite_y = oam_bytes[base];
@@ -269,11 +274,10 @@ impl Renderer {
 
             for px in 0..8usize {
                 let screen_x = (sprite_x as usize + px).wrapping_sub(8);
-                // Only write if the pixel is opaque and no earlier sprite already
-                // claimed this position (lower OAM index has priority on DMG).
-                if screen_x < 160 && row[px] != 0 && out[screen_x] == 0 {
+                if screen_x < 160 && row[px] != 0 && sprite_x < pixel_x[screen_x] {
                     out[screen_x] = row[px];
                     out_priority[screen_x] = flags & 0x80 != 0;
+                    pixel_x[screen_x] = sprite_x;
                 }
             }
         }
