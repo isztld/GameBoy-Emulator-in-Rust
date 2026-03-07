@@ -132,9 +132,13 @@ impl System {
             cpu.execute(mmu, &mut tick)
         };
 
-        // OAM DMA: an instantaneous bus-level copy (hardware takes 160 cycles;
-        // we approximate as instant).  The per-cycle PPU state machine has
-        // already been driven by tick_io() in the closure above.
+        // Advance OAM DMA cycle counter.  The bus copy was performed instantly
+        // when 0xFF46 was written; this counts down the 160-cycle window during
+        // which the CPU is restricted to HRAM access.
+        self.mmu.advance_dma(machine_cycles);
+
+        // OAM DMA: the per-cycle PPU state machine has already been driven by
+        // tick_io() in the closure above.
         self.ppu.handle_oam_dma(&mut self.mmu);
 
         // Render the current scanline when the PPU signals HBlank entry.

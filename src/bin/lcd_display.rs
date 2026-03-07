@@ -244,7 +244,7 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Enter)      => Some(Button::Start),
                     Key::Named(NamedKey::Backspace)  => Some(Button::Select),
                     Key::Character(ch) => match ch.as_str() {
-                        "z" | "Z" => Some(Button::A),
+                        "a" | "A" => Some(Button::A),
                         "x" | "X" => Some(Button::B),
                         _ => None,
                     },

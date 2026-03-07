@@ -173,15 +173,13 @@ impl Renderer {
         window_line: u8,
         out: &mut [u8; 160],
     ) {
-        // Window must be enabled and scanline must be at or below window Y
+        // Window must be enabled and scanline must be at or below window Y.
         if !lcdc.window_display() || scanline_y < wy {
             return;
         }
 
-        // Window X position: the left edge of the window is at screen X = wx - 7.
-        // wx < 7 means the window is fully off-screen to the left; wx=7 is valid
-        // and places the window starting at screen x=0.
-        if wx < 7 {
+        // wx=167+ hides the window entirely (screen x = wx-7 ≥ 160).
+        if wx > 166 {
             return;
         }
 
@@ -198,11 +196,17 @@ impl Renderer {
         let mut cached_tile_x = usize::MAX;
         let mut cached_row = [0u8; 8];
 
-        // Window starts at screen X = wx - 7
-        let window_start_x = (wx as usize) - 7;
+        // wx ≥ 7: window's left edge is at screen x = wx-7.
+        // wx < 7: window is clipped on the left; rendering starts at screen x=0,
+        //         but the first (7-wx) window pixels are skipped.
+        let (window_start_x, window_pixel_offset) = if wx >= 7 {
+            ((wx as usize) - 7, 0usize)
+        } else {
+            (0usize, (7 - wx) as usize)
+        };
 
         for screen_x in window_start_x..SCREEN_WIDTH {
-            let window_x = screen_x - window_start_x;
+            let window_x = (screen_x - window_start_x) + window_pixel_offset;
             let tile_map_col = (window_x / 8) % 32;
 
             if tile_map_col != cached_tile_x {
@@ -247,27 +251,46 @@ impl Renderer {
         // and only overwriting with strictly-smaller X).
         let mut pixel_x = [u8::MAX; 160];
 
+        // Hardware selects only the first 10 Y-matching sprites per scanline.
+        // Sprites with X=0 or X≥168 still count toward this limit but are not drawn.
+        let mut sprite_count = 0usize;
+
         for i in 0..40usize {
+            if sprite_count >= 10 {
+                break;
+            }
+
             let base = i * 4;
             let sprite_y = oam_bytes[base];
             let sprite_x = oam_bytes[base + 1];
             let raw_tile  = oam_bytes[base + 2];
             let flags     = oam_bytes[base + 3];
 
-            // GB OAM: sprite_y is the bottom of the sprite + 16, sprite_x is left + 8.
-            // A sprite with sprite_y=0 or sprite_x=0 is hidden.
-            if sprite_y == 0 || sprite_x == 0 || sprite_y >= 160 || sprite_x >= 168 {
+            // GB OAM: sprite_y encodes screen_top + 16; sprite_x encodes screen_left + 8.
+            // Y=0 and Y≥160 are never on any visible scanline — skip without counting.
+            if sprite_y == 0 || sprite_y >= 160 {
                 continue;
             }
 
-            let screen_top = sprite_y.saturating_sub(16);
-            let screen_bottom = screen_top + height as u8;
+            // Use signed arithmetic so partially top-clipped sprites (sprite_y < 16)
+            // get the correct tile row instead of saturating to row 0.
+            let screen_top    = sprite_y as i16 - 16;
+            let screen_bottom = screen_top + height as i16;
 
-            if scanline_y < screen_top || scanline_y >= screen_bottom {
+            if (scanline_y as i16) < screen_top || (scanline_y as i16) >= screen_bottom {
+                continue; // Not in Y range — does not count toward limit
+            }
+
+            // This sprite is Y-selected; counts toward the 10-per-scanline limit.
+            sprite_count += 1;
+
+            // X=0 or X≥168 hides the sprite but still counts toward the limit (handled above).
+            if sprite_x == 0 || sprite_x >= 168 {
                 continue;
             }
 
-            let mut tile_row = (scanline_y - screen_top) as usize;
+            // Correct tile row within the sprite tile, handling partial top clip.
+            let mut tile_row = (scanline_y as i16 - screen_top) as usize;
             let tile_index = if height == 16 {
                 if flags & 0x40 != 0 { tile_row = 15 - tile_row; } // Y-flip
                 if tile_row < 8 { raw_tile & 0xFE } else { tile_row -= 8; raw_tile | 0x01 }
@@ -377,7 +400,7 @@ impl Renderer {
         obp1: u8,
     ) {
         let mut window_line = 0u8;
-        let window_enable = lcdc.bg_tile_map_display() && lcdc.window_display() && wx >= 7;
+        let window_enable = lcdc.bg_tile_map_display() && lcdc.window_display() && wx < 167;
         for y in 0..SCREEN_HEIGHT {
             let scanline_y = y as u8;
             self.render_scanline(frame_buffer, bus, scanline_y, lcdc,

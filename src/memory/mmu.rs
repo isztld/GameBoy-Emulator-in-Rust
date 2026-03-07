@@ -48,6 +48,12 @@ pub struct MemoryBus {
     pub joypad_action: u8,
     /// D-pad states (1=pressed): bit0=Right, bit1=Left, bit2=Up, bit3=Down
     pub joypad_dpad: u8,
+
+    /// Remaining M-cycles until the active OAM DMA transfer completes.
+    /// 0 = no DMA in progress.  Set to 160 when DMA starts; decremented each
+    /// M-cycle by `advance_dma()`.  While non-zero, CPU reads outside HRAM
+    /// return $FF and OAM reads/writes are blocked.
+    pub oam_dma_cycles_remaining: u8,
 }
 
 // Global serial log file for output (using Arc<Mutex<File>> for sharing)
@@ -146,6 +152,7 @@ impl MemoryBus {
             timer_tac_write: None,
             joypad_action: 0,
             joypad_dpad: 0,
+            oam_dma_cycles_remaining: 0,
         }
     }
 
@@ -154,6 +161,17 @@ impl MemoryBus {
         if self.flat_mode {
             return self.rom.get(address as usize).copied().unwrap_or(0xFF);
         }
+
+        // During OAM DMA the CPU may only access HRAM ($FF80–$FFFE).
+        // All other reads return $FF (DMG hardware behaviour).
+        if self.oam_dma_cycles_remaining > 0 {
+            match address {
+                0xFF80..=0xFFFE => return self.hram[(address - 0xFF80) as usize],
+                0xFFFF           => return self.ie,
+                _                => return 0xFF,
+            }
+        }
+
         match address {
             // ROM bank 0 — always mapped directly.
             0x0000..=0x3FFF => {
@@ -166,13 +184,28 @@ impl MemoryBus {
                 let idx = bank_offset + (address - 0x4000) as usize;
                 self.rom.get(idx).copied().unwrap_or(0xFF)
             }
-            0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize],
+            // VRAM is inaccessible during Mode 3 (pixel transfer) when the LCD is on.
+            0x8000..=0x9FFF => {
+                if self.io[0x40] & 0x80 != 0 && self.io[0x41] & 0x03 == 0x03 {
+                    0xFF
+                } else {
+                    self.vram[(address - 0x8000) as usize]
+                }
+            }
             0xA000..=0xBFFF => self.external_ram[(address - 0xA000) as usize],
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize],
             0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize],
             // Echo RAM mirrors C000-DDFF (not all the way to DFFF).
             0xE000..=0xFDFF => self.wram[(address - 0xE000) as usize],
-            0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize],
+            // OAM is inaccessible during Modes 2-3 (OAM scan + pixel transfer) when LCD is on.
+            0xFE00..=0xFE9F => {
+                let mode = self.io[0x41] & 0x03;
+                if self.io[0x40] & 0x80 != 0 && mode >= 0x02 {
+                    0xFF
+                } else {
+                    self.oam[(address - 0xFE00) as usize]
+                }
+            }
             // Unusable region — return high nibble of low address byte, repeated.
             0xFEA0..=0xFEFF => self.read_fea0(address),
             0xFF00..=0xFF7F => self.io[(address - 0xFF00) as usize],
@@ -189,18 +222,40 @@ impl MemoryBus {
             }
             return;
         }
+
+        // During OAM DMA the CPU may only access HRAM; all other writes are ignored.
+        if self.oam_dma_cycles_remaining > 0 {
+            match address {
+                0xFF80..=0xFFFE => { self.hram[(address - 0xFF80) as usize] = value; }
+                0xFFFF           => { self.ie = value; }
+                _                => {}
+            }
+            return;
+        }
+
         match address {
             // ROM area — MBC intercepts control writes; ROM itself is read-only.
             0x0000..=0x7FFF => {
                 self.mbc.write_rom_control(address, value);
             }
-            0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize] = value,
+            // VRAM writes ignored during Mode 3 when LCD is on.
+            0x8000..=0x9FFF => {
+                if self.io[0x40] & 0x80 == 0 || self.io[0x41] & 0x03 != 0x03 {
+                    self.vram[(address - 0x8000) as usize] = value;
+                }
+            }
             0xA000..=0xBFFF => self.external_ram[(address - 0xA000) as usize] = value,
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize] = value,
             0xD000..=0xDFFF => self.wram[(address - 0xC000) as usize] = value,
             // Echo RAM mirrors C000-DDFF.
             0xE000..=0xFDFF => self.wram[(address - 0xE000) as usize] = value,
-            0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize] = value,
+            // OAM writes ignored during Modes 2-3 when LCD is on.
+            0xFE00..=0xFE9F => {
+                let mode = self.io[0x41] & 0x03;
+                if self.io[0x40] & 0x80 == 0 || mode < 0x02 {
+                    self.oam[(address - 0xFE00) as usize] = value;
+                }
+            }
             0xFEA0..=0xFEFF => {} // Unusable — writes ignored.
             0xFF00..=0xFF7F => self.write_io(address, value),
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize] = value,
@@ -310,7 +365,8 @@ impl MemoryBus {
 
     /// Perform an OAM DMA transfer.
     ///
-    /// Copies 160 bytes from `source_page << 8` into OAM.
+    /// Copies 160 bytes from `source_page << 8` into OAM and starts the 160-cycle
+    /// DMA window during which the CPU may only access HRAM.
     /// The source is read through the bus so all normal address-decode rules apply.
     /// We snapshot the relevant source bytes first to avoid borrow-checker issues
     /// and to match hardware behaviour (DMA reads the bus before OAM is written).
@@ -324,6 +380,17 @@ impl MemoryBus {
             *byte = self.read(source_base + i as u16);
         }
         self.oam.copy_from_slice(&buf);
+
+        // The transfer takes 160 M-cycles.  Restrict CPU memory access until the
+        // counter reaches zero (decremented by advance_dma() each M-cycle).
+        self.oam_dma_cycles_remaining = 160;
+    }
+
+    /// Advance the OAM DMA cycle counter by `cycles` M-cycles.
+    /// Called once per CPU instruction step from the system loop.
+    pub fn advance_dma(&mut self, cycles: u32) {
+        self.oam_dma_cycles_remaining =
+            self.oam_dma_cycles_remaining.saturating_sub(cycles as u8);
     }
 
     /// Return a reference to the full ROM slice.

@@ -5,10 +5,10 @@
 /// Sprite attribute entry (4 bytes)
 #[derive(Debug, Clone, Copy)]
 pub struct OamEntry {
-    pub y: u8,        // Y position (0-159, 0x90 = sprite off-screen)
-    pub x: u8,        // X position (0-167, 0x90 = sprite off-screen)
+    pub y: u8,        // Y position on screen + 16 (Y=16 → top of screen; Y=0 or Y≥160 → hidden)
+    pub x: u8,        // X position on screen + 8 (X=8 → left edge; X=0 or X≥168 → hidden)
     pub tile: u8,     // Tile number (0-255)
-    pub flags: u8,    // Flags (d, p, x, y)
+    pub flags: u8,    // Flags: bit7=priority, bit6=y-flip, bit5=x-flip, bit4=palette, bit3=bank, bit2-0=cgb-palette
 }
 
 impl OamEntry {
@@ -104,18 +104,27 @@ impl OAM {
         }
     }
 
-    /// Get visible sprites for a given scanline
-    /// Returns up to 10 visible sprites
-    pub fn get_visible_sprites(&self, scanline_y: u8) -> Vec<&OamEntry> {
+    /// Get visible sprites for a given scanline.
+    /// `height` is 8 (LCDC bit 2 = 0) or 16 (LCDC bit 2 = 1).
+    /// Returns up to 10 sprites whose Y range covers `scanline_y`.
+    /// Sprites with X=0 or X≥168 (hidden horizontally) are still included
+    /// since they count toward the 10-per-scanline hardware limit.
+    pub fn get_visible_sprites(&self, scanline_y: u8, height: usize) -> Vec<&OamEntry> {
         let mut visible = Vec::new();
 
         for entry in &self.entries {
-            // Sprite is on this scanline if:
-            // - Y position <= scanline_y < Y position + height
-            // - Sprite is not off-screen (X and Y > 0x90)
-            let height = 8; // Default size, 16 for CGB
+            // Y encodes screen_top + 16.  Y=0 and Y≥160 are never on a visible
+            // scanline regardless of height.
             let y = entry.y;
-            if y < 0x90 && scanline_y >= y && scanline_y < y + height {
+            if y == 0 || y >= 160 {
+                continue;
+            }
+
+            // Use signed arithmetic to handle sprites partially clipped at the top.
+            let screen_top    = y as i16 - 16;
+            let screen_bottom = screen_top + height as i16;
+
+            if (scanline_y as i16) >= screen_top && (scanline_y as i16) < screen_bottom {
                 visible.push(entry);
                 if visible.len() >= 10 {
                     break; // Max 10 sprites per scanline

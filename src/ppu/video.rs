@@ -379,10 +379,11 @@ impl VideoController {
 
         // The window line counter increments every scanline on which the window
         // is actually rendered (visible, enabled, and within bounds).
+        // wx=167+ hides the window (screen x = wx-7 ≥ 160); wx<7 is clipped but visible.
         let window_visible = self.lcdc.bg_tile_map_display()
             && self.lcdc.window_display()
             && scanline_y >= wy
-            && wx >= 7;
+            && wx < 167;
         if window_visible {
             self.window_line = self.window_line.wrapping_add(1);
         }
