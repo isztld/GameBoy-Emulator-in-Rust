@@ -79,7 +79,6 @@ pub struct VideoController {
     pub(crate) wx: u8,          // Window X
     pub(crate) dma: u8,         // OAM DMA source
     pub(crate) oam_dma_active: bool,
-    pub(crate) oam_dma_address: u16,
     // Rendering components
     pub(crate) renderer: Renderer,
     pub(crate) frame_buffer: SharedFrameBuffer,
@@ -111,7 +110,6 @@ impl VideoController {
             wx: 0,
             dma: 0,
             oam_dma_active: false,
-            oam_dma_address: 0,
             renderer: Renderer::new(),
             frame_buffer: create_shared_frame_buffer(),
             scanline_ready: false,
@@ -135,7 +133,6 @@ impl VideoController {
             wx: 0,
             dma: 0,
             oam_dma_active: false,
-            oam_dma_address: 0,
             renderer: Renderer::new(),
             frame_buffer,
             scanline_ready: false,

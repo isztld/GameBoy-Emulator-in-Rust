@@ -35,7 +35,6 @@ pub struct MemoryBus {
     pub flat_mode: bool,
     pub(crate) ie: u8,
     pub(crate) mbc: MemoryBankController,
-    pub(crate) cgb_mode: bool,
 
     // Pending timer register writes — set by write_io and drained by System::step.
     pub(crate) timer_div_reset: bool,
@@ -133,7 +132,6 @@ impl MemoryBus {
             io,
             ie: 0x00,
             mbc,
-            cgb_mode: false,
             flat_mode: false,
             timer_div_reset: false,
             timer_tma_write: None,

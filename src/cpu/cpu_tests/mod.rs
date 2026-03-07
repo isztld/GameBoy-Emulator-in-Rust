@@ -1,6 +1,6 @@
     pub(super) use super::*;
     pub(super) use crate::memory::MemoryBus;
-    pub(super) use crate::cpu::instructions::{Instruction, R8Register, R16Register, R16Mem, Condition, CBInstruction};
+    pub(super) use crate::cpu::instructions::{Instruction, R8Register, CBInstruction};
 
     pub(super) fn noop_tick(_: &mut [u8; 128]) {}
 
