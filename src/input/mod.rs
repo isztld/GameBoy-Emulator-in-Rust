@@ -4,4 +4,4 @@
 
 pub mod joypad;
 
-pub use joypad::Joypad;
+pub use joypad::Button;

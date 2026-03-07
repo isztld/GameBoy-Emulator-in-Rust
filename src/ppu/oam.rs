@@ -30,7 +30,7 @@ impl OamEntry {
     }
 
     // Flags bit definitions
-    pub fn is_pallete_number(&self) -> bool {
+    pub fn is_palette_number(&self) -> bool {
         self.flags & 0x10 != 0
     }
 
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn test_oam_entry_flags() {
         let entry = OamEntry::new(100, 100, 0, 0xFF);
-        assert!(entry.is_pallete_number());
+        assert!(entry.is_palette_number());
         assert!(entry.is_x_flip());
         assert!(entry.is_y_flip());
         assert!(entry.is_priority());

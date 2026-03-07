@@ -11,10 +11,10 @@ pub fn exec_add_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let a = cpu_state.registers.a();
     let result = a.wrapping_add(val);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (val & 0x0F) > 0x0F);
-    cpu_state.registers.f_mut().set_carry(result < a);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0x0F) + (val & 0x0F) > 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_carry(result < a));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -26,10 +26,10 @@ pub fn exec_adc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_add(val).wrapping_add(old_c);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(((a & 0xF) + (val & 0xF) + old_c) > 0xF);
-    cpu_state.registers.f_mut().set_carry((a as u16) + (val as u16) + (old_c as u16) > 0xFF);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(((a & 0xF) + (val & 0xF) + old_c) > 0xF));
+    cpu_state.registers.modify_f(|f| f.set_carry((a as u16) + (val as u16) + (old_c as u16) > 0xFF));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -40,10 +40,10 @@ pub fn exec_sub_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(val);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_carry(a < val);
-    cpu_state.registers.f_mut().set_half_carry((a & 0xF) < (val & 0xF));
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
+    cpu_state.registers.modify_f(|f| f.set_carry(a < val));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0xF) < (val & 0xF)));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -55,12 +55,12 @@ pub fn exec_sbc_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_sub(val).wrapping_sub(old_c);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
 
     let borrow = val as u16 + old_c as u16;
-    cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
-    cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (val as u32 & 0xF) + old_c as u32);
+    cpu_state.registers.modify_f(|f| f.set_carry((a as u16) < borrow));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a as u32 & 0xF) < (val as u32 & 0xF) + old_c as u32));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -71,10 +71,10 @@ pub fn exec_and_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let a = cpu_state.registers.a();
     let result = a & val;
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(true);
-    cpu_state.registers.f_mut().set_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(true));
+    cpu_state.registers.modify_f(|f| f.set_carry(false));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -85,10 +85,10 @@ pub fn exec_xor_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regis
     let a = cpu_state.registers.a();
     let result = a ^ val;
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
-    cpu_state.registers.f_mut().set_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
+    cpu_state.registers.modify_f(|f| f.set_carry(false));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -99,10 +99,10 @@ pub fn exec_or_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
     let a = cpu_state.registers.a();
     let result = a | val;
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
-    cpu_state.registers.f_mut().set_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
+    cpu_state.registers.modify_f(|f| f.set_carry(false));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -112,10 +112,10 @@ pub fn exec_cp_a_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Regist
     if reg == R8Register::HL { tick(&mut bus.io); }
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(val);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_carry(a < val);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (val & 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
+    cpu_state.registers.modify_f(|f| f.set_carry(a < val));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0x0F) < (val & 0x0F)));
     if reg == R8Register::HL { 2 } else { 1 }
 }
 
@@ -124,10 +124,10 @@ pub fn exec_add_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], 
     let a = cpu_state.registers.a();
     let result = a.wrapping_add(value);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (value & 0x0F) > 0x0F);
-    cpu_state.registers.f_mut().set_carry(result < a);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0x0F) + (value & 0x0F) > 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_carry(result < a));
     tick(io);
     2
 }
@@ -138,10 +138,10 @@ pub fn exec_adc_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], 
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_add(value).wrapping_add(old_c);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) + (value & 0x0F) + old_c as u8 > 0x0F);
-    cpu_state.registers.f_mut().set_carry((a as u16) + (value as u16) + (old_c as u16) > 0xFF);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0x0F) + (value & 0x0F) + old_c as u8 > 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_carry((a as u16) + (value as u16) + (old_c as u16) > 0xFF));
     tick(io);
     2
 }
@@ -151,10 +151,10 @@ pub fn exec_sub_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], 
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(value);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_carry(a < value);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (value & 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
+    cpu_state.registers.modify_f(|f| f.set_carry(a < value));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0x0F) < (value & 0x0F)));
     tick(io);
     2
 }
@@ -165,11 +165,11 @@ pub fn exec_sbc_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], 
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let result = a.wrapping_sub(value).wrapping_sub(old_c);
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
     let borrow = value as u16 + old_c as u16;
-    cpu_state.registers.f_mut().set_carry((a as u16) < borrow);
-    cpu_state.registers.f_mut().set_half_carry((a as u32 & 0xF) < (value as u32 & 0xF) + old_c as u32);
+    cpu_state.registers.modify_f(|f| f.set_carry((a as u16) < borrow));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a as u32 & 0xF) < (value as u32 & 0xF) + old_c as u32));
     tick(io);
     2
 }
@@ -179,10 +179,10 @@ pub fn exec_and_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], 
     let a = cpu_state.registers.a();
     let result = a & value;
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(true);
-    cpu_state.registers.f_mut().set_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(true));
+    cpu_state.registers.modify_f(|f| f.set_carry(false));
     tick(io);
     2
 }
@@ -192,10 +192,10 @@ pub fn exec_xor_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], 
     let a = cpu_state.registers.a();
     let result = a ^ value;
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
-    cpu_state.registers.f_mut().set_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
+    cpu_state.registers.modify_f(|f| f.set_carry(false));
     tick(io);
     2
 }
@@ -205,10 +205,10 @@ pub fn exec_or_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], t
     let a = cpu_state.registers.a();
     let result = a | value;
     cpu_state.registers.set_a(result);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
-    cpu_state.registers.f_mut().set_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
+    cpu_state.registers.modify_f(|f| f.set_carry(false));
     tick(io);
     2
 }
@@ -217,10 +217,10 @@ pub fn exec_or_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], t
 pub fn exec_cp_a_imm8(cpu_state: &mut CPUState, value: u8, io: &mut [u8; 128], tick: &mut dyn FnMut(&mut [u8; 128])) -> u32 {
     let a = cpu_state.registers.a();
     let result = a.wrapping_sub(value);
-    cpu_state.registers.f_mut().set_zero(result == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_carry(a < value);
-    cpu_state.registers.f_mut().set_half_carry((a & 0x0F) < (value & 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_zero(result == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
+    cpu_state.registers.modify_f(|f| f.set_carry(a < value));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((a & 0x0F) < (value & 0x0F)));
     tick(io);
     2
 }
@@ -235,10 +235,10 @@ mod tests {
     fn init_cpu_state(a: u8) -> CPUState {
         let mut cpu = CPUState::new();
         cpu.registers.set_a(a);
-        cpu.registers.f_mut().set_zero(false);
-        cpu.registers.f_mut().set_subtraction(false);
-        cpu.registers.f_mut().set_half_carry(false);
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_zero(false));
+        cpu.registers.modify_f(|f| f.set_subtraction(false));
+        cpu.registers.modify_f(|f| f.set_half_carry(false));
+        cpu.registers.modify_f(|f| f.set_carry(false));
         cpu
     }
 
@@ -322,7 +322,7 @@ mod tests {
         let mut cpu = init_cpu_state(0x10);
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x20);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
 
         let cycles = exec_adc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
@@ -362,7 +362,7 @@ mod tests {
         let mut cpu = init_cpu_state(0x50);
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x30);
-        cpu.registers.f_mut().set_carry(true); // set initial carry
+        cpu.registers.modify_f(|f| f.set_carry(true)); // set initial carry
 
         let cycles = exec_sbc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
@@ -375,7 +375,7 @@ mod tests {
         let mut cpu = init_cpu_state(0x50);
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.registers.set_b(0x30);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
 
         let cycles = exec_sbc_a_r8(&mut cpu, &mut bus, R8Register::B, &mut noop_tick);
 
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn test_adc_a_imm8_with_carry() {
         let mut cpu = init_cpu_state(0x10);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
 
         let cycles = exec_adc_a_imm8(&mut cpu, 0x20, &mut [0u8; 128], &mut noop_tick);
 

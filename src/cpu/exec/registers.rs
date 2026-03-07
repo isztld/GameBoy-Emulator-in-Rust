@@ -31,9 +31,9 @@ pub fn exec_inc_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Registe
     if reg == R8Register::HL {
         tick(&mut bus.io);
     }
-    cpu_state.registers.f_mut().set_zero(new_val == 0);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((old & 0x0F) == 0x0F);
+    cpu_state.registers.modify_f(|f| f.set_zero(new_val == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((old & 0x0F) == 0x0F));
     match reg {
         R8Register::HL => 3,
         _ => 1,
@@ -51,9 +51,9 @@ pub fn exec_dec_r8(cpu_state: &mut CPUState, bus: &mut MemoryBus, reg: R8Registe
     if reg == R8Register::HL {
         tick(&mut bus.io);
     }
-    cpu_state.registers.f_mut().set_zero(new_val == 0);
-    cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_half_carry((old & 0x0F) == 0x00);
+    cpu_state.registers.modify_f(|f| f.set_zero(new_val == 0));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((old & 0x0F) == 0x00));
     match reg {
         R8Register::HL => 3,
         _ => 1,
@@ -66,9 +66,9 @@ pub fn exec_add_hl_r16(cpu_state: &mut CPUState, reg: R16Register, io: &mut [u8;
     let add = r16(&cpu_state.registers, reg) as u32;
     let result = hl.wrapping_add(add);
     set_r16(&mut cpu_state.registers, R16Register::HL, result as u16);
-    cpu_state.registers.f_mut().set_half_carry((hl & 0x0FFF) + (add & 0x0FFF) > 0x0FFF);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_carry(result > 0xFFFF);
+    cpu_state.registers.modify_f(|f| f.set_half_carry((hl & 0x0FFF) + (add & 0x0FFF) > 0x0FFF));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_carry(result > 0xFFFF));
     tick(io);
     2
 }
@@ -85,10 +85,10 @@ mod tests {
 
     fn init_cpu_state() -> CPUState {
         let mut cpu = CPUState::new();
-        cpu.registers.f_mut().set_zero(false);
-        cpu.registers.f_mut().set_subtraction(false);
-        cpu.registers.f_mut().set_half_carry(false);
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_zero(false));
+        cpu.registers.modify_f(|f| f.set_subtraction(false));
+        cpu.registers.modify_f(|f| f.set_half_carry(false));
+        cpu.registers.modify_f(|f| f.set_carry(false));
         cpu
     }
 
@@ -134,8 +134,8 @@ mod tests {
     #[test]
     fn test_inc_dec_r16_flags_unchanged() {
         let mut cpu = init_cpu_state();
-        cpu.registers.f_mut().set_zero(true);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_zero(true));
+        cpu.registers.modify_f(|f| f.set_carry(true));
         cpu.registers.hl = 0x1000;
         exec_inc_r16(&mut cpu, R16Register::HL, &mut [0u8; 128], &mut noop_tick);
         assert!(cpu.registers.f().is_zero());
@@ -287,7 +287,7 @@ mod tests {
     fn test_add_hl_r16_zero_flag_unaffected() {
         // ADD HL, r16 does not modify the zero flag
         let mut cpu = init_cpu_state();
-        cpu.registers.f_mut().set_zero(true);
+        cpu.registers.modify_f(|f| f.set_zero(true));
         cpu.registers.hl = 0x0001;
         cpu.registers.de = 0x0001;
         exec_add_hl_r16(&mut cpu, R16Register::DE, &mut [0u8; 128], &mut noop_tick);

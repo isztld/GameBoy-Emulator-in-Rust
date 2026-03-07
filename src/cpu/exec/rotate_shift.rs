@@ -6,10 +6,10 @@ pub fn exec_rlca(cpu_state: &mut CPUState) -> u32 {
     let a = cpu_state.registers.a();
     let new_a = a.rotate_left(1);
     cpu_state.registers.set_a(new_a);
-    cpu_state.registers.f_mut().set_carry((a & 0x80) != 0);
-    cpu_state.registers.f_mut().set_zero(false);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_carry((a & 0x80) != 0));
+    cpu_state.registers.modify_f(|f| f.set_zero(false));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
     1
 }
 
@@ -18,10 +18,10 @@ pub fn exec_rrca(cpu_state: &mut CPUState) -> u32 {
     let a = cpu_state.registers.a();
     let new_a = a.rotate_right(1);
     cpu_state.registers.set_a(new_a);
-    cpu_state.registers.f_mut().set_carry((a & 0x01) != 0);
-    cpu_state.registers.f_mut().set_zero(false);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_carry((a & 0x01) != 0));
+    cpu_state.registers.modify_f(|f| f.set_zero(false));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
     1
 }
 
@@ -31,10 +31,10 @@ pub fn exec_rla(cpu_state: &mut CPUState) -> u32 {
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let new_a = (a << 1) | old_c;
     cpu_state.registers.set_a(new_a);
-    cpu_state.registers.f_mut().set_carry((a & 0x80) != 0);
-    cpu_state.registers.f_mut().set_zero(false);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_carry((a & 0x80) != 0));
+    cpu_state.registers.modify_f(|f| f.set_zero(false));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
     1
 }
 
@@ -44,10 +44,10 @@ pub fn exec_rra(cpu_state: &mut CPUState) -> u32 {
     let old_c = cpu_state.registers.f().is_carry() as u8;
     let new_a = (a >> 1) | (old_c << 7);
     cpu_state.registers.set_a(new_a);
-    cpu_state.registers.f_mut().set_carry((a & 0x01) != 0);
-    cpu_state.registers.f_mut().set_zero(false);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_carry((a & 0x01) != 0));
+    cpu_state.registers.modify_f(|f| f.set_zero(false));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
     1
 }
 
@@ -86,9 +86,9 @@ pub fn exec_daa(cpu_state: &mut CPUState) -> u32 {
     };
 
     cpu_state.registers.set_a(new_a);
-    cpu_state.registers.f_mut().set_zero(new_a == 0);
-    cpu_state.registers.f_mut().set_half_carry(false);
-    cpu_state.registers.f_mut().set_carry(new_carry);
+    cpu_state.registers.modify_f(|f| f.set_zero(new_a == 0));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
+    cpu_state.registers.modify_f(|f| f.set_carry(new_carry));
     1
 }
 
@@ -96,25 +96,25 @@ pub fn exec_daa(cpu_state: &mut CPUState) -> u32 {
 pub fn exec_cpl(cpu_state: &mut CPUState) -> u32 {
     let a = cpu_state.registers.a();
     cpu_state.registers.set_a(!a);
-    cpu_state.registers.f_mut().set_subtraction(true);
-    cpu_state.registers.f_mut().set_half_carry(true);
+    cpu_state.registers.modify_f(|f| f.set_subtraction(true));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(true));
     1
 }
 
 /// Execute SCF
 pub fn exec_scf(cpu_state: &mut CPUState) -> u32 {
-    cpu_state.registers.f_mut().set_carry(true);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_carry(true));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
     1
 }
 
 /// Execute CCF
 pub fn exec_ccf(cpu_state: &mut CPUState) -> u32 {
     let carry = cpu_state.registers.f().is_carry();
-    cpu_state.registers.f_mut().set_carry(!carry);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry(false);
+    cpu_state.registers.modify_f(|f| f.set_carry(!carry));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry(false));
     1
 }
 
@@ -125,10 +125,10 @@ mod tests {
     fn init_cpu_state() -> CPUState {
         let mut cpu = CPUState::new();
         cpu.registers.set_a(0x00);
-        cpu.registers.f_mut().set_zero(false);
-        cpu.registers.f_mut().set_subtraction(false);
-        cpu.registers.f_mut().set_half_carry(false);
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_zero(false));
+        cpu.registers.modify_f(|f| f.set_subtraction(false));
+        cpu.registers.modify_f(|f| f.set_half_carry(false));
+        cpu.registers.modify_f(|f| f.set_carry(false));
         cpu
     }
 
@@ -163,7 +163,7 @@ mod tests {
         // 0x00 rotated is still 0x00, but zero flag must be 0.
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x00);
-        cpu.registers.f_mut().set_zero(true);
+        cpu.registers.modify_f(|f| f.set_zero(true));
         exec_rlca(&mut cpu);
         assert!(!cpu.registers.f().is_zero());
     }
@@ -201,7 +201,7 @@ mod tests {
     fn test_rla_carry_in_zero_carry_out_one() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0b11001111);
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_carry(false));
         assert_eq!(exec_rla(&mut cpu), 1);
         // bit 7 was 1 → carry out = 1; carry in = 0 → bit 0 = 0
         assert_eq!(cpu.registers.a(), 0b10011110);
@@ -215,7 +215,7 @@ mod tests {
     fn test_rla_carry_in_one_carry_out_zero() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0b01001111);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_rla(&mut cpu);
         // bit 7 was 0 → carry out = 0; carry in = 1 → bit 0 = 1
         assert_eq!(cpu.registers.a(), 0b10011111);
@@ -226,7 +226,7 @@ mod tests {
     fn test_rla_carry_in_one_carry_out_one() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0b11001111);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_rla(&mut cpu);
         assert_eq!(cpu.registers.a(), 0b10011111);
         assert!(cpu.registers.f().is_carry());
@@ -240,7 +240,7 @@ mod tests {
     fn test_rra_carry_in_zero_carry_out_one() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0b11001111);
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_carry(false));
         assert_eq!(exec_rra(&mut cpu), 1);
         // bit 0 was 1 → carry out = 1; carry in = 0 → bit 7 = 0
         assert_eq!(cpu.registers.a(), 0b01100111);
@@ -254,7 +254,7 @@ mod tests {
     fn test_rra_carry_in_one_carry_out_zero() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0b01001110);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_rra(&mut cpu);
         // bit 0 was 0 → carry out = 0; carry in = 1 → bit 7 = 1
         assert_eq!(cpu.registers.a(), 0b10100111);
@@ -265,7 +265,7 @@ mod tests {
     fn test_rra_carry_in_one_carry_out_one() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0b01001111);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_rra(&mut cpu);
         assert_eq!(cpu.registers.a(), 0b10100111);
         assert!(cpu.registers.f().is_carry());
@@ -315,7 +315,7 @@ mod tests {
         // Carry flag set from previous add → upper correction
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x12);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_daa(&mut cpu);
         // 0x12 + 0x60 = 0x72, carry preserved
         assert_eq!(cpu.registers.a(), 0x72);
@@ -327,7 +327,7 @@ mod tests {
         // Half-carry set → lower correction regardless of nibble value
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x10);
-        cpu.registers.f_mut().set_half_carry(true);
+        cpu.registers.modify_f(|f| f.set_half_carry(true));
         exec_daa(&mut cpu);
         assert_eq!(cpu.registers.a(), 0x16);
         assert!(!cpu.registers.f().is_half_carry()); // always cleared by DAA
@@ -337,7 +337,7 @@ mod tests {
     fn test_daa_sub_valid_bcd_no_adjustment() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x12);
-        cpu.registers.f_mut().set_subtraction(true);
+        cpu.registers.modify_f(|f| f.set_subtraction(true));
         exec_daa(&mut cpu);
         assert_eq!(cpu.registers.a(), 0x12);
         assert!(!cpu.registers.f().is_carry()); // carry unchanged for sub
@@ -348,8 +348,8 @@ mod tests {
         // Half-carry set after SUB → subtract 0x06
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x20);
-        cpu.registers.f_mut().set_subtraction(true);
-        cpu.registers.f_mut().set_half_carry(true);
+        cpu.registers.modify_f(|f| f.set_subtraction(true));
+        cpu.registers.modify_f(|f| f.set_half_carry(true));
         exec_daa(&mut cpu);
         assert_eq!(cpu.registers.a(), 0x1A);
         assert!(!cpu.registers.f().is_half_carry());
@@ -360,8 +360,8 @@ mod tests {
         // Carry set after SUB → subtract 0x60
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x72);
-        cpu.registers.f_mut().set_subtraction(true);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_subtraction(true));
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_daa(&mut cpu);
         assert_eq!(cpu.registers.a(), 0x12);
         assert!(cpu.registers.f().is_carry()); // carry preserved in sub case
@@ -395,8 +395,8 @@ mod tests {
     fn test_cpl_preserves_zero_and_carry() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0xAA);
-        cpu.registers.f_mut().set_zero(true);
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_zero(true));
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_cpl(&mut cpu);
         assert_eq!(cpu.registers.a(), 0x55);
         assert!(cpu.registers.f().is_zero());  // preserved
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn test_scf() {
         let mut cpu = init_cpu_state();
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_carry(false));
         assert_eq!(exec_scf(&mut cpu), 1);
         assert!(cpu.registers.f().is_carry());
         assert!(!cpu.registers.f().is_subtraction());
@@ -421,7 +421,7 @@ mod tests {
     fn test_scf_already_set() {
         // SCF sets carry unconditionally
         let mut cpu = init_cpu_state();
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_scf(&mut cpu);
         assert!(cpu.registers.f().is_carry());
     }
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_ccf_flip_to_set() {
         let mut cpu = init_cpu_state();
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_carry(false));
         assert_eq!(exec_ccf(&mut cpu), 1);
         assert!(cpu.registers.f().is_carry());
         assert!(!cpu.registers.f().is_subtraction());
@@ -439,7 +439,7 @@ mod tests {
     #[test]
     fn test_ccf_flip_to_clear() {
         let mut cpu = init_cpu_state();
-        cpu.registers.f_mut().set_carry(true);
+        cpu.registers.modify_f(|f| f.set_carry(true));
         exec_ccf(&mut cpu);
         assert!(!cpu.registers.f().is_carry());
     }

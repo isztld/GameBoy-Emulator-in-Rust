@@ -81,10 +81,10 @@ pub fn exec_add_sp_imm8(cpu_state: &mut CPUState, value: i8, io: &mut [u8; 128],
     let rhs_byte = value as u8 as u16;
     let result = sp.wrapping_add(value as i16 as u16);
     cpu_state.registers.sp = result;
-    cpu_state.registers.f_mut().set_zero(false);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F);
-    cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF);
+    cpu_state.registers.modify_f(|f| f.set_zero(false));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF));
     tick(io); // simulated imm read
     tick(io); // internal delay 1
     tick(io); // internal delay 2
@@ -97,10 +97,10 @@ pub fn exec_ld_hl_sp_imm8(cpu_state: &mut CPUState, value: i8, io: &mut [u8; 128
     let rhs_byte = value as u8 as u16;
     let result = sp.wrapping_add(value as i16 as u16);
     cpu_state.registers.hl = result;
-    cpu_state.registers.f_mut().set_zero(false);
-    cpu_state.registers.f_mut().set_subtraction(false);
-    cpu_state.registers.f_mut().set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F);
-    cpu_state.registers.f_mut().set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF);
+    cpu_state.registers.modify_f(|f| f.set_zero(false));
+    cpu_state.registers.modify_f(|f| f.set_subtraction(false));
+    cpu_state.registers.modify_f(|f| f.set_half_carry((sp & 0x0F) + (rhs_byte & 0x0F) > 0x0F));
+    cpu_state.registers.modify_f(|f| f.set_carry((sp & 0xFF) + (rhs_byte & 0xFF) > 0xFF));
     tick(io); // simulated imm read
     tick(io); // internal delay
     3
@@ -164,10 +164,10 @@ mod tests {
 
     fn init_cpu_state() -> CPUState {
         let mut cpu = CPUState::new();
-        cpu.registers.f_mut().set_zero(false);
-        cpu.registers.f_mut().set_subtraction(false);
-        cpu.registers.f_mut().set_half_carry(false);
-        cpu.registers.f_mut().set_carry(false);
+        cpu.registers.modify_f(|f| f.set_zero(false));
+        cpu.registers.modify_f(|f| f.set_subtraction(false));
+        cpu.registers.modify_f(|f| f.set_half_carry(false));
+        cpu.registers.modify_f(|f| f.set_carry(false));
         cpu.ime = false;
         cpu
     }

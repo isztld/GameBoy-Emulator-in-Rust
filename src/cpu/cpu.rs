@@ -611,7 +611,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x10);
         cpu.state.registers.set_b(0x20);
-        cpu.state.registers.f_mut().set_carry(false); // Clear carry from reset
+        cpu.state.registers.modify_f(|f| f.set_carry(false)); // Clear carry from reset
 
         let instruction = crate::cpu::instructions::Instruction::AdcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
@@ -627,7 +627,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x10);
         cpu.state.registers.set_b(0x20);
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::AdcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
@@ -675,7 +675,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x30);
         cpu.state.registers.set_b(0x10);
-        cpu.state.registers.f_mut().set(0); // clear all flags
+        cpu.state.registers.modify_f(|f| f.set(0)); // clear all flags
 
         let instruction = crate::cpu::instructions::Instruction::SbcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
@@ -691,7 +691,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x30);
         cpu.state.registers.set_b(0x10);
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::SbcAR8 {
             reg: crate::cpu::instructions::R8Register::B,
@@ -864,7 +864,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x10);
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::AdcAImm8 { value: 0x20 };
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -890,7 +890,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x30);
-        cpu.state.registers.f_mut().set(0); // clear all flags
+        cpu.state.registers.modify_f(|f| f.set(0)); // clear all flags
 
         let instruction = crate::cpu::instructions::Instruction::SbcAImm8 { value: 0x10 };
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1151,7 +1151,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0b10110001); // 0xB1
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::RLA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1165,7 +1165,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0b10110001); // 0xB1
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::RRA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1179,7 +1179,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x19); // 19 in BCD
-        cpu.state.registers.f_mut().set(0);
+        cpu.state.registers.modify_f(|f| f.set(0));
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1193,10 +1193,11 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x0A);
-        let f = cpu.state.registers.f_mut();
-        f.set_half_carry(true);
-        f.set_subtraction(false);
-        f.set_carry(false);
+        cpu.state.registers.modify_f(|f| {
+            f.set_half_carry(true);
+            f.set_subtraction(false);
+            f.set_carry(false);
+        });
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1209,10 +1210,11 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0x9A);
-        let f = cpu.state.registers.f_mut();
-        f.set_subtraction(false);
-        f.set_half_carry(false);
-        f.set_carry(false);
+        cpu.state.registers.modify_f(|f| {
+            f.set_subtraction(false);
+            f.set_half_carry(false);
+            f.set_carry(false);
+        });
 
         let instruction = crate::cpu::instructions::Instruction::DAA;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1240,7 +1242,7 @@ mod tests {
     fn test_scf() {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.f_mut().set_carry(false);
+        cpu.state.registers.modify_f(|f| f.set_carry(false));
 
         let instruction = crate::cpu::instructions::Instruction::SCF;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
@@ -1253,14 +1255,14 @@ mod tests {
     fn test_ccf() {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
-        cpu.state.registers.f_mut().set_carry(false);
+        cpu.state.registers.modify_f(|f| f.set_carry(false));
 
         let instruction = crate::cpu::instructions::Instruction::CCF;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
         assert!(cpu.state.registers.f().is_carry()); // Flip carry
 
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
         let instruction = crate::cpu::instructions::Instruction::CCF;
         crate::cpu::exec::execute_instruction(&mut cpu.state, &mut bus, instruction, &mut noop_tick);
 
@@ -1298,7 +1300,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_zero(false); // Not zero
+        cpu.state.registers.modify_f(|f| f.set_zero(false)); // Not zero
 
         let instruction = crate::cpu::instructions::Instruction::JrCondImm8 {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1314,7 +1316,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_zero(true); // Zero
+        cpu.state.registers.modify_f(|f| f.set_zero(true)); // Zero
 
         let instruction = crate::cpu::instructions::Instruction::JrCondImm8 {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1330,7 +1332,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_zero(true); // Zero
+        cpu.state.registers.modify_f(|f| f.set_zero(true)); // Zero
 
         let instruction = crate::cpu::instructions::Instruction::JrCondImm8 {
             cond: crate::cpu::instructions::Condition::Z,
@@ -1346,7 +1348,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_carry(false); // Not carry
+        cpu.state.registers.modify_f(|f| f.set_carry(false)); // Not carry
 
         let instruction = crate::cpu::instructions::Instruction::JrCondImm8 {
             cond: crate::cpu::instructions::Condition::NC,
@@ -1376,7 +1378,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_zero(false);
+        cpu.state.registers.modify_f(|f| f.set_zero(false));
 
         let instruction = crate::cpu::instructions::Instruction::JpCondImm16 {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1392,7 +1394,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_zero(true);
+        cpu.state.registers.modify_f(|f| f.set_zero(true));
 
         let instruction = crate::cpu::instructions::Instruction::JpCondImm16 {
             cond: crate::cpu::instructions::Condition::Z,
@@ -1408,7 +1410,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_carry(false);
+        cpu.state.registers.modify_f(|f| f.set_carry(false));
 
         let instruction = crate::cpu::instructions::Instruction::JpCondImm16 {
             cond: crate::cpu::instructions::Condition::NC,
@@ -1424,7 +1426,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::JpCondImm16 {
             cond: crate::cpu::instructions::Condition::C,
@@ -1471,7 +1473,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1003;
         cpu.state.registers.sp = 0xC000;
-        cpu.state.registers.f_mut().set_zero(false); // Z = 0
+        cpu.state.registers.modify_f(|f| f.set_zero(false)); // Z = 0
 
         let instruction = crate::cpu::instructions::Instruction::CallCondImm16 {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1491,7 +1493,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
         cpu.state.registers.sp = 0xC000;
-        cpu.state.registers.f_mut().set_zero(true);
+        cpu.state.registers.modify_f(|f| f.set_zero(true));
 
         let instruction = crate::cpu::instructions::Instruction::CallCondImm16 {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1509,7 +1511,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
         cpu.state.registers.sp = 0xC000;
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::CallCondImm16 {
             cond: crate::cpu::instructions::Condition::C,
@@ -1544,7 +1546,7 @@ mod tests {
         cpu.state.registers.sp = 0xBFFC;
         bus.write(0xBFFC, 0x02); // low byte
         bus.write(0xBFFD, 0x20); // high byte
-        cpu.state.registers.f_mut().set_zero(false); // Z = 0
+        cpu.state.registers.modify_f(|f| f.set_zero(false)); // Z = 0
 
         let instruction = crate::cpu::instructions::Instruction::RetCond {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1561,7 +1563,7 @@ mod tests {
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.pc = 0x1000;
         cpu.state.registers.sp = 0xBFFC;
-        cpu.state.registers.f_mut().set_zero(true);
+        cpu.state.registers.modify_f(|f| f.set_zero(true));
 
         let instruction = crate::cpu::instructions::Instruction::RetCond {
             cond: crate::cpu::instructions::Condition::NZ,
@@ -1882,7 +1884,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0b10110001);
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::CB {
             cb_instr: CBInstruction::RLR8 {
@@ -1900,7 +1902,7 @@ mod tests {
         let mut cpu = CPU::new();
         let mut bus = MemoryBus::new(vec![0; 32768]);
         cpu.state.registers.set_a(0b10110001);
-        cpu.state.registers.f_mut().set_carry(true);
+        cpu.state.registers.modify_f(|f| f.set_carry(true));
 
         let instruction = crate::cpu::instructions::Instruction::CB {
             cb_instr: CBInstruction::RRR8 {

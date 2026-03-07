@@ -86,8 +86,6 @@ pub fn run_test_case(test: &TestCase) -> Result<(), String> {
     let mut cpu = CPU::new();
     cpu.state_mut().registers = initial_state.registers;
     cpu.state_mut().ime = initial_state.ime;
-    cpu.state_mut().halted = initial_state.halted;
-    cpu.state_mut().stopped = initial_state.stopped;
 
     eprintln!("  Initial PC: {:04X}, A={:02X}, B={:02X}, C={:02X}, D={:02X}, E={:02X}, H={:02X}, L={:02X}",
         cpu.state().registers.pc,

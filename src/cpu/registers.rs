@@ -172,8 +172,10 @@ impl Registers {
         self.hl = (self.hl & 0xFF00) | (value as u16);
     }
 
-    pub fn f_mut(&mut self) -> &mut Flags {
-        unsafe { &mut *(self as *mut Registers as *mut Flags) }
+    pub fn modify_f(&mut self, op: impl FnOnce(&mut Flags)) {
+        let mut f = self.f();
+        op(&mut f);
+        self.set_f(f);
     }
 
     pub fn r16(&self, reg: crate::cpu::instructions::R16Register) -> u16 {
@@ -209,8 +211,6 @@ pub struct CPUState {
     pub registers: Registers,
     pub ime: bool, // Interrupt Master Enable
     pub ime_pending: bool, // EI sets this; IME is enabled after the next instruction
-    pub halted: bool,
-    pub stopped: bool,
 }
 
 impl CPUState {
@@ -219,8 +219,6 @@ impl CPUState {
             registers: Registers::new(),
             ime: false,
             ime_pending: false,
-            halted: false,
-            stopped: false,
         }
     }
 }
@@ -418,8 +416,6 @@ mod tests {
         let state = CPUState::new();
         assert_eq!(state.registers.pc, 0x0000);
         assert!(!state.ime);
-        assert!(!state.halted);
-        assert!(!state.stopped);
     }
 
     #[test]

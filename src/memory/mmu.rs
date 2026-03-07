@@ -40,7 +40,6 @@ pub struct MemoryBus {
     // Pending timer register writes — set by write_io and drained by System::step
     // into the Timer struct, which is the authoritative source for timer state.
     pub timer_div_reset: bool,
-    pub timer_tima_write: Option<u8>,
     pub timer_tma_write: Option<u8>,
     pub timer_tac_write: Option<u8>,
 
@@ -54,23 +53,17 @@ pub struct MemoryBus {
     /// M-cycle by `advance_dma()`.  While non-zero, CPU reads outside HRAM
     /// return $FF and OAM reads/writes are blocked.
     pub oam_dma_cycles_remaining: u8,
+
+    /// Optional file for serial output logging.  `None` means serial bytes go
+    /// to stdout.  Set via `serial_log_file` field directly after construction.
+    pub serial_log_file: Option<Arc<Mutex<std::fs::File>>>,
 }
 
-// Global serial log file for output (using Arc<Mutex<File>> for sharing)
-static SERIAL_LOG_FILE: Mutex<Option<Arc<Mutex<std::fs::File>>>> = Mutex::new(None);
-
 impl MemoryBus {
-    /// Set the serial log file for console output
-    pub fn set_serial_log_file(file: Option<Arc<Mutex<std::fs::File>>>) {
-        let mut log_file = SERIAL_LOG_FILE.lock().unwrap();
-        *log_file = file;
-    }
-
     /// Write a character to the serial log or stdout if not configured.
     /// Does NOT append a newline — callers write raw characters.
-    pub fn write_serial_byte(byte: u8) {
-        let log_file = SERIAL_LOG_FILE.lock().unwrap();
-        if let Some(ref file) = *log_file {
+    fn write_serial_byte(&self, byte: u8) {
+        if let Some(ref file) = self.serial_log_file {
             let mut f = file.lock().unwrap();
             f.write_all(&[byte]).ok(); // write raw byte
             f.flush().ok();
@@ -147,12 +140,12 @@ impl MemoryBus {
             cgb_mode: false,
             flat_mode: false,
             timer_div_reset: false,
-            timer_tima_write: None,
             timer_tma_write: None,
             timer_tac_write: None,
             joypad_action: 0,
             joypad_dpad: 0,
             oam_dma_cycles_remaining: 0,
+            serial_log_file: None,
         }
     }
 
@@ -296,7 +289,7 @@ impl MemoryBus {
                     // Complete instantly: output the byte, fill SB with 0xFF (no device),
                     // clear the transfer-start bit, and fire the serial interrupt.
                     let data = self.io[0x01];
-                    MemoryBus::write_serial_byte(data);
+                    self.write_serial_byte(data);
                     self.io[0x01] = 0xFF; // received byte from absent partner
                     self.io[offset] = value & 0x7F; // clear bit 7 (transfer done)
                     self.io[0x0F] = 0xE0 | ((self.io[0x0F] | 0x08) & 0x1F);
@@ -313,7 +306,6 @@ impl MemoryBus {
             }
             0x05 => {
                 self.io[offset] = value; // TIMA
-                self.timer_tima_write = Some(value);
             }
             0x06 => {
                 self.io[offset] = value; // TMA
@@ -775,9 +767,6 @@ mod tests {
         use std::fs::OpenOptions;
         use std::sync::{Arc, Mutex};
 
-        // Use a unique filename per test invocation to reduce (but not eliminate)
-        // races on the global static. A proper fix requires making the log file
-        // an instance field on MemoryBus.
         let temp_path = std::env::temp_dir()
             .join(format!("gb_serial_{}.txt", std::process::id()));
 
@@ -786,16 +775,16 @@ mod tests {
             .open(&temp_path)
             .expect("open temp file");
 
-        MemoryBus::set_serial_log_file(Some(Arc::new(Mutex::new(file))));
-
         let mut bus = make_bus(32768);
+        bus.serial_log_file = Some(Arc::new(Mutex::new(file)));
+
         for ch in [b'H', b'i'] {
             bus.write(0xFF01, ch);
             bus.write(0xFF02, 0x81);
         }
 
-        // Flush and close by dropping the reference before reading.
-        MemoryBus::set_serial_log_file(None);
+        // Flush and close by dropping the log file reference.
+        bus.serial_log_file = None;
 
         let content = std::fs::read_to_string(&temp_path).expect("read temp file");
         let _ = std::fs::remove_file(&temp_path);

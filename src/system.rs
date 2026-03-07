@@ -1,6 +1,6 @@
 //! GameBoy system module
 //!
-//! Ties together CPU, MMU, PPU, APU, Timer, and Joypad.
+//! Ties together CPU, MMU, PPU, APU, and Timer.
 //! Interrupt handling lives in CPU::execute; the IF register (0xFF0F)
 //! and IE register (0xFFFF) are the source of truth.
 
@@ -13,7 +13,7 @@ use crate::memory::MemoryBus;
 use crate::ppu::video::VideoController;
 use crate::audio::apu::AudioProcessor;
 use crate::timer::Timer;
-use crate::input::joypad::{Button, Joypad};
+use crate::input::joypad::Button;
 use crate::config::EmulatorFlags;
 use crate::display::SharedFrameBuffer;
 
@@ -23,7 +23,6 @@ pub struct System {
     pub ppu: VideoController,
     pub apu: AudioProcessor,
     pub timer: Timer,
-    pub joypad: Joypad,
     pub running: bool,
     pub frame_complete: bool,
     pub total_cycles: u64,
@@ -49,9 +48,7 @@ impl System {
             None
         };
 
-        // Serial log file is routed through a process-wide static on MemoryBus.
-        // This is a known limitation; refactoring it to an instance field on
-        // MemoryBus is left as a future task.
+        let mut mmu = MemoryBus::new(rom_data);
         if flags.log_serial {
             let file = OpenOptions::new()
                 .write(true)
@@ -59,18 +56,15 @@ impl System {
                 .truncate(true)
                 .open(&flags.log_serial_file)
                 .expect("Failed to create serial log file");
-            MemoryBus::set_serial_log_file(Some(Arc::new(Mutex::new(file))));
-        } else {
-            MemoryBus::set_serial_log_file(None);
+            mmu.serial_log_file = Some(Arc::new(Mutex::new(file)));
         }
 
         let mut system = System {
             cpu: CPU::new(),
-            mmu: MemoryBus::new(rom_data),
+            mmu,
             ppu: VideoController::new(),
             apu: AudioProcessor::new(),
             timer: Timer::new(),
-            joypad: Joypad::new(),
             running: false,
             frame_complete: false,
             total_cycles: 0,
@@ -158,9 +152,6 @@ impl System {
             self.timer.write_div();
             self.mmu.timer_div_reset = false;
         }
-        // TIMA writes (0xFF05) are honoured immediately by timer.tick() via the
-        // io[0x05] sync, so no deferred apply is needed here.
-        let _ = self.mmu.timer_tima_write.take();
         if let Some(v) = self.mmu.timer_tma_write.take() {
             self.timer.write_tma(v);
         }

@@ -4,23 +4,12 @@
 //! including the SM83 CPU, memory management, PPU, APU,
 //! and all standard peripherals.
 
-pub mod cpu;
-pub mod display;
-pub mod memory;
-pub mod ppu;
-pub mod audio;
-pub mod timer;
-pub mod input;
-pub mod system;
-pub mod config;
-pub mod disasm;
-
 use std::env;
 use std::fs;
 use std::path::Path;
 
-use system::System;
-use config::EmulatorFlags;
+use gb_emu::{System, EmulatorFlags, disasm};
+use gb_emu::memory::MemoryBus as MemoryBusAlias;
 
 fn parse_flags() -> (EmulatorFlags, String, bool) {
     let mut flags = EmulatorFlags::default();
@@ -103,7 +92,7 @@ fn main() {
     let (flags, rom_path, disassemble) = parse_flags();
 
     if flags.cpu_json_test && let Some(cpu_json_test_dir) = &flags.cpu_json_test_dir {
-        use cpu::run_all_tests;
+        use gb_emu::run_all_tests;
 
         println!("Loading tests from: {}", cpu_json_test_dir);
         let start_time = std::time::Instant::now();
@@ -146,7 +135,7 @@ fn main() {
 
     if disassemble {
         // Disassemble mode
-        let bus = disasm::MemoryBus::new(rom_data);
+        let bus = MemoryBusAlias::new(rom_data);
         let instructions = disasm::disasm_region(&bus, 0x0100, 50);
         println!("Disassembly starting at 0x0100:");
         for instr in instructions {

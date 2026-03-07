@@ -18,7 +18,7 @@ pub mod disasm;
 pub use system::System;
 pub use config::EmulatorFlags;
 pub use cpu::{testing, CPU, execute_instruction};
-pub use display::{FrameBuffer, SharedFrameBuffer, create_shared_frame_buffer, MetalRenderer, SCREEN_WIDTH, SCREEN_HEIGHT};
+pub use display::{FrameBuffer, SharedFrameBuffer, create_shared_frame_buffer, SCREEN_WIDTH, SCREEN_HEIGHT};
 
 // Re-export testing functions for convenience
 pub use cpu::testing::{load_tests_from_dir, run_test_case, run_all_tests};

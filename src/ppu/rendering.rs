@@ -53,28 +53,6 @@ impl Renderer {
         }
     }
 
-    /// Decode a tile row into pixel values
-    /// Returns 8 pixel values (0-3) for the given row
-    pub fn decode_tile_row(&self, tile: &Tile, row: usize) -> [u8; 8] {
-        if row >= 8 {
-            return [0; 8];
-        }
-
-        let mut pixels = [0; 8];
-
-        let lsb = tile.data[row * 2];
-        let msb = tile.data[row * 2 + 1];
-
-        for i in 0..8 {
-            let bit = 7 - i;
-            let l = (lsb >> bit) & 1;
-            let m = (msb >> bit) & 1;
-            pixels[i] = (m << 1) | l;
-        }
-
-        pixels
-    }
-
     /// Decode two bitplane bytes into 8 pixel colour indices (0-3).
     fn decode_bitplanes(lsb: u8, msb: u8) -> [u8; 8] {
         let mut row = [0u8; 8];

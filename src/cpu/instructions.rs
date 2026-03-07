@@ -10,19 +10,6 @@
 /// - Block 3: C0-FF (Jumps, calls, returns, stack operations)
 /// - CB prefix: CBB0-CBFF (Rotate, shift, bit operations)
 
-/// Instruction formats
-#[derive(Debug, Clone, Copy)]
-pub enum InstructionFormat {
-    None,      // 1 byte, no operands
-    Imm8,      // 1 byte + 1 byte immediate
-    Imm16,     // 1 byte + 2 bytes immediate (little-endian)
-    R8,        // 1 byte + r8 operand (encoded in instruction)
-    R16,       // 1 byte + r16 operand
-    R16Mem,    // 1 byte + r16mem operand (bc, de, hl+, hl-)
-    Cond,      // 1 byte + cond operand (nz, z, nc, c)
-    R16Stk,    // 1 byte + r16stk operand (bc, de, hl, af)
-}
-
 /// CPU Instruction
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Instruction {
