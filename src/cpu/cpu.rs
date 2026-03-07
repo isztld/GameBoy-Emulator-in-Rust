@@ -184,5 +184,5 @@ impl CPU {
 }
 
 #[cfg(test)]
-#[path = "cpu_tests.rs"]
+#[path = "cpu_tests/mod.rs"]
 mod tests;
