@@ -62,6 +62,7 @@ fn parse_flags() -> (EmulatorFlags, String, bool) {
                 println!("  --serial-log [file]   Enable serial output logging (default: serial_log.txt)");
                 println!("  --disasm              Disassemble ROM instead of running");
                 println!("  --cycle-limit <n>     Set maximum cycles to execute");
+                println!("  --cpu-json-test        Test the CPU against known JSON tests");
                 println!("  --help, -h            Show this help message");
                 std::process::exit(0);
             }
