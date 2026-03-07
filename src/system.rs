@@ -18,17 +18,17 @@ use crate::config::EmulatorFlags;
 use crate::display::SharedFrameBuffer;
 
 pub struct System {
-    pub cpu: CPU,
-    pub mmu: MemoryBus,
-    pub ppu: VideoController,
-    pub apu: AudioProcessor,
-    pub timer: Timer,
-    pub running: bool,
-    pub frame_complete: bool,
-    pub total_cycles: u64,
+    pub(crate) cpu: CPU,
+    pub(crate) mmu: MemoryBus,
+    pub(crate) ppu: VideoController,
+    pub(crate) apu: AudioProcessor,
+    pub(crate) timer: Timer,
+    pub(crate) running: bool,
+    pub(crate) frame_complete: bool,
+    pub(crate) total_cycles: u64,
     /// Optional hard cap on machine cycles; step() stops the system when reached.
-    pub cycle_limit: Option<u64>,
-    pub cpu_log_file: Option<Arc<Mutex<std::fs::File>>>,
+    pub(crate) cycle_limit: Option<u64>,
+    pub(crate) cpu_log_file: Option<Arc<Mutex<std::fs::File>>>,
     #[allow(dead_code)]
     frame_buffer: SharedFrameBuffer,
 }
@@ -272,6 +272,13 @@ impl System {
             Button::Down   => self.mmu.joypad_dpad   &= !0x08,
         }
         self.mmu.update_joypad_io();
+    }
+
+    /// Returns true if a VBlank frame was completed since the last call, and clears the flag.
+    pub fn take_frame_complete(&mut self) -> bool {
+        let was = self.frame_complete;
+        self.frame_complete = false;
+        was
     }
 
     pub fn get_audio_output(&self) -> crate::audio::apu::AudioOutput {

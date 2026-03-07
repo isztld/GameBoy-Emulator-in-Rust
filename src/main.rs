@@ -163,12 +163,8 @@ fn main() {
     while system.is_running() {
         system.step();
 
-        // Check for frame completion (for display output)
-        if system.frame_complete {
-            // In a real emulator, you would render the frame here
-            // For now, just reset the flag
-            system.frame_complete = false;
-        }
+        // Check for frame completion (for display output).
+        let _ = system.take_frame_complete();
     }
 }
 

@@ -22,40 +22,36 @@ use std::sync::{Arc, Mutex};
 /// Memory bus for the GameBoy
 #[derive(Debug)]
 pub struct MemoryBus {
-    pub rom: Vec<u8>,
-    pub vram: [u8; 8192], // 8 KiB VRAM
-    pub external_ram: [u8; 8192], // 8 KiB external RAM
-    pub wram: [u8; 8192], // 8 KiB WRAM (4+4)
-    pub hram: [u8; 127], // 127 bytes HRAM (FF80-FFFE)
-    pub oam: [u8; 160], // 160 bytes OAM (FE00-FE9F)
-    pub io: [u8; 128], // I/O registers (FF00-FF7F)
+    pub(crate) rom: Vec<u8>,
+    pub(crate) vram: [u8; 8192],
+    pub(crate) external_ram: [u8; 8192],
+    pub(crate) wram: [u8; 8192],
+    pub(crate) hram: [u8; 127],
+    pub(crate) oam: [u8; 160],
+    pub(crate) io: [u8; 128],
     /// When true, all reads and writes go directly to `rom` as a flat 64 KiB
     /// array, bypassing all memory-mapped regions and the MBC.  Used by the
-    /// CPU test harness, which assumes a fully-writable 64 KiB address space.
+    /// CPU test harness.
     pub flat_mode: bool,
-    pub ie: u8, // Interrupt Enable (FFFF)
-    pub mbc: MemoryBankController,
-    pub cgb_mode: bool, // CGB mode enabled
+    pub(crate) ie: u8,
+    pub(crate) mbc: MemoryBankController,
+    pub(crate) cgb_mode: bool,
 
-    // Pending timer register writes — set by write_io and drained by System::step
-    // into the Timer struct, which is the authoritative source for timer state.
-    pub timer_div_reset: bool,
-    pub timer_tma_write: Option<u8>,
-    pub timer_tac_write: Option<u8>,
+    // Pending timer register writes — set by write_io and drained by System::step.
+    pub(crate) timer_div_reset: bool,
+    pub(crate) timer_tma_write: Option<u8>,
+    pub(crate) timer_tac_write: Option<u8>,
 
     /// Action button states (1=pressed): bit0=A, bit1=B, bit2=Select, bit3=Start
-    pub joypad_action: u8,
+    pub(crate) joypad_action: u8,
     /// D-pad states (1=pressed): bit0=Right, bit1=Left, bit2=Up, bit3=Down
-    pub joypad_dpad: u8,
+    pub(crate) joypad_dpad: u8,
 
     /// Remaining M-cycles until the active OAM DMA transfer completes.
-    /// 0 = no DMA in progress.  Set to 160 when DMA starts; decremented each
-    /// M-cycle by `advance_dma()`.  While non-zero, CPU reads outside HRAM
-    /// return $FF and OAM reads/writes are blocked.
-    pub oam_dma_cycles_remaining: u8,
+    pub(crate) oam_dma_cycles_remaining: u8,
 
-    /// Optional file for serial output logging.  `None` means serial bytes go
-    /// to stdout.  Set via `serial_log_file` field directly after construction.
+    /// Optional file for serial output logging.  Set after construction to
+    /// redirect serial bytes to a file instead of stdout.
     pub serial_log_file: Option<Arc<Mutex<std::fs::File>>>,
 }
 

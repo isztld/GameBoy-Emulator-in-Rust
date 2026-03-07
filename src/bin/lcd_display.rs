@@ -279,7 +279,7 @@ impl ApplicationHandler for App {
                 }
 
                 // ── update GB screen texture when a frame is ready ───────────
-                if app.emu.system.frame_complete {
+                if app.emu.system.take_frame_complete() {
                     let fb = app.emu.frame_buffer.lock().unwrap();
                     if fb.frame_ready {
                         // Convert 0xAARRGGBB u32 pixels → RGBA u8 bytes
@@ -313,7 +313,6 @@ impl ApplicationHandler for App {
                     drop(fb);
 
                     app.emu.frame_buffer.lock().unwrap().clear();
-                    app.emu.system.frame_complete = false;
                 }
 
                 // FPS counter (updated every second)

@@ -67,33 +67,33 @@ impl Lcdc {
 /// Video Controller
 #[derive(Debug)]
 pub struct VideoController {
-    pub mode: PpuMode,
-    pub mode_clock: u32, // Clock cycles in current mode
-    pub ly: u8,          // LCD Y coordinate (0-153)
-    pub lyc: u8,         // LY compare
-    pub lcdc: Lcdc,      // LCD control
-    pub stat: u8,        // LCD status
-    pub scy: u8,         // Scroll Y
-    pub scx: u8,         // Scroll X
-    pub wy: u8,          // Window Y
-    pub wx: u8,          // Window X
-    pub dma: u8,         // OAM DMA source
-    pub oam_dma_active: bool,
-    pub oam_dma_address: u16,
+    pub(crate) mode: PpuMode,
+    pub(crate) mode_clock: u32, // Clock cycles in current mode
+    pub(crate) ly: u8,          // LCD Y coordinate (0-153)
+    pub(crate) lyc: u8,         // LY compare
+    pub(crate) lcdc: Lcdc,      // LCD control
+    pub(crate) stat: u8,        // LCD status
+    pub(crate) scy: u8,         // Scroll Y
+    pub(crate) scx: u8,         // Scroll X
+    pub(crate) wy: u8,          // Window Y
+    pub(crate) wx: u8,          // Window X
+    pub(crate) dma: u8,         // OAM DMA source
+    pub(crate) oam_dma_active: bool,
+    pub(crate) oam_dma_address: u16,
     // Rendering components
-    pub renderer: Renderer,
-    pub frame_buffer: SharedFrameBuffer,
+    pub(crate) renderer: Renderer,
+    pub(crate) frame_buffer: SharedFrameBuffer,
     /// Set to true when PixelTransfer→HBlank transition occurs;
     /// system.step() renders the scanline then clears this flag.
-    pub scanline_ready: bool,
+    pub(crate) scanline_ready: bool,
     /// Set to true on the first cycle of VBlank entry (edge-triggered).
     /// Cleared by system.step() after it sets frame_complete.
-    pub vblank_entered: bool,
+    pub(crate) vblank_entered: bool,
     /// Internal window line counter. Increments once per scanline where the
     /// window is actually rendered. Reset to 0 at the start of each frame
     /// (when LY wraps to 0). Using LY-WY instead of this causes wrong tiles
     /// whenever the window is toggled or WY changes mid-frame.
-    pub window_line: u8,
+    pub(crate) window_line: u8,
 }
 
 impl VideoController {
