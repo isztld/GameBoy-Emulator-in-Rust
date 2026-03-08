@@ -93,4 +93,3 @@ Each side sums up to 4 channel outputs (each 0.0–1.0), divides by 4, multiplie
 ## Known limitations
 - No APU read-back (NR52 channel status bits always 0).
 - No obscure power-on state for wave RAM.
-- MemoryBus does not yet forward 0xFF10–0xFF3F writes to the APU (routing gap).

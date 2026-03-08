@@ -41,6 +41,9 @@ pub struct MemoryBus {
     pub(crate) timer_tma_write: Option<u8>,
     pub(crate) timer_tac_write: Option<u8>,
 
+    // Pending APU register writes — set by write_io and drained by System::step.
+    pub(crate) apu_writes: Vec<(u16, u8)>,
+
     /// Action button states (1=pressed): bit0=A, bit1=B, bit2=Select, bit3=Start
     pub(crate) joypad_action: u8,
     /// D-pad states (1=pressed): bit0=Right, bit1=Left, bit2=Up, bit3=Down
@@ -140,6 +143,7 @@ impl MemoryBus {
             joypad_dpad: 0,
             oam_dma_cycles_remaining: 0,
             serial_log_file: None,
+            apu_writes: Vec::new(),
         }
     }
 
@@ -315,12 +319,14 @@ impl MemoryBus {
                 self.io[offset] = 0xE0 | (value & 0x1F);
             }
             0x10..=0x14 | 0x16..=0x19 | 0x1A..=0x1E | 0x20..=0x26 => {
-                // Audio registers.
+                // Audio registers — queue for APU; also mirror into io[] for read-back.
                 self.io[offset] = value;
+                self.apu_writes.push((address, value));
             }
             0x30..=0x3F => {
-                // Wave RAM.
+                // Wave RAM — queue for APU; also mirror into io[] for read-back.
                 self.io[offset] = value;
+                self.apu_writes.push((address, value));
             }
             0x40 => self.io[offset] = value, // LCDC
             0x41 => {

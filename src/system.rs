@@ -156,6 +156,11 @@ impl System {
             self.timer.write_tac(v);
         }
 
+        // Drain APU register writes queued by MemoryBus::write_io.
+        for (addr, val) in self.mmu.apu_writes.drain(..) {
+            self.apu.write_io(addr, val);
+        }
+
         // Optionally log the instruction that just ran, including raw opcode bytes and a
         // disassembly‑style mnemonic. This mirrors the output format of the
         // built‑in disassembler (e.g. "$0100 00           NOP").

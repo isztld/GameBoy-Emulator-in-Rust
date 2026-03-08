@@ -29,6 +29,7 @@ When `flat_mode = true`, all reads/writes address `bus.rom` as a 64 KiB flat arr
 ### I/O register conventions
 - `bus.io` is a `[u8; 128]` array. Index = `address & 0x7F`.
 - Timer registers: written via `write_io` which sets `timer_div_reset` / `timer_tma_write` / `timer_tac_write` flags. `System::step` drains these into `Timer` after each instruction.
+- APU registers (0xFF10–0xFF26, 0xFF30–0xFF3F): written via `write_io` which pushes `(address, value)` pairs onto `apu_writes: Vec<(u16, u8)>`. `System::step` drains these into `AudioProcessor::write_io` after each instruction. The raw values are also mirrored into `bus.io` for read-back.
 - PPU registers (LCDC, STAT, LY, SCY, SCX, WY, WX, DMA, BGP, OBP0, OBP1): written to `bus.io`; PPU reads them back via `mmu.read`.
 - Joypad: `update_joypad_io()` encodes `joypad_action`/`joypad_dpad` into `io[0x00]`.
 - Serial (0xFF01/0xFF02): `write_io` at 0xFF01 calls `MemoryBus::write_serial_byte` when bit 7 of SC (0xFF02) is set.

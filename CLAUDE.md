@@ -22,5 +22,3 @@ cargo run --bin gb_emu -- --disasm path/to/rom.gb
 - **Split borrows** — `System::step` destructures `self` to allow independent borrows of `cpu`, `mmu`, `ppu`, `timer`, and `apu` simultaneously.
 - **Scanline rendering** — PPU sets `scanline_ready` on HBlank entry; `System::step` calls `render_scanline` then clears the flag.
 
-## Known issues / refactoring opportunities
-1. **APU register routing gap** — `MemoryBus::write_io` does not forward 0xFF10–0xFF3F writes to the `AudioProcessor`; games will not trigger channels until this is wired up.
