@@ -7,7 +7,6 @@ use crate::cpu::instructions::{Instruction, R8Register, R16Register, R16Mem, Con
 
 /// Decode an instruction from the opcode
 pub fn decode_instruction(
-    _cpu_state: &crate::cpu::CPUState,
     bus: &MemoryBus,
     pc: u16,
     opcode: u8,
@@ -201,10 +200,6 @@ mod tests {
         MemoryBus::new(vec![0u8; 32768])
     }
 
-    fn cpu() -> crate::cpu::CPUState {
-        crate::cpu::CPUState::new()
-    }
-
     /// Write a fake instruction into WRAM starting at 0xC000 and decode from there.
     /// `bytes` is the full instruction including opcode at index 0.
     fn decode_with_operands(bytes: &[u8]) -> (Instruction, u8) {
@@ -213,7 +208,7 @@ mod tests {
         for (i, &b) in bytes.iter().enumerate() {
             bus.write(pc + i as u16, b);
         }
-        decode_instruction(&cpu(), &bus, pc, bytes[0])
+        decode_instruction(&bus, pc, bytes[0])
     }
 
     fn decode_no_operands(opcode: u8) -> (Instruction, u8) {

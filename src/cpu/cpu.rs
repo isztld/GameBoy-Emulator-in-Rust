@@ -105,7 +105,7 @@ impl CPU {
         // sub-functions only tick for the *additional* M-cycles (immediate reads,
         // memory accesses, internal delays), so we must tick once here.
         tick(&mut bus.io);
-        let (instruction, opcode_bytes) = decode_instruction(&self.state, bus, pc, opcode);
+        let (instruction, opcode_bytes) = decode_instruction(bus, pc, opcode);
 
         // Advance PC past this instruction before executing, so that relative
         // jumps and calls that read PC (e.g. RST return address) see the correct

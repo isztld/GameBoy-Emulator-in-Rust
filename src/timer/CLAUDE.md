@@ -24,7 +24,6 @@
 - `timer_div_reset = true` → `System::step` calls `timer.write_div()` which zeros `div` and `div_counter`.
 - `timer_tma_write = Some(v)` → `timer.write_tma(v)`.
 - `timer_tac_write = Some(v)` → `timer.write_tac(v)`.
-- `timer_tima_write` — stored but immediately discarded by `System::step` (TIMA is synced live through `io[0x05]`).
 
 ## TAC
 `TAC::tima_period()` returns M-cycle period per TIMA increment:
@@ -33,7 +32,6 @@
 - CS=2: 16 M-cycles (65536 Hz)
 - CS=3: 64 M-cycles (16384 Hz)
 
-## Refactoring opportunities
-1. **`timer_tima_write` field is dead** — it is set by `write_io` and then unconditionally discarded in `System::step` with `let _ = self.mmu.timer_tima_write.take()`. Remove the field.
-2. **TIMA overflow delay** — the hardware has a 1-machine-cycle delay between TIMA overflow and TMA reload/interrupt. This is not modelled; it may cause off-by-one failures in some games.
-3. **DIV obscure behaviour** — writing any value to DIV resets the internal 16-bit counter (not just the 8-bit register). The current model resets only the 8-bit `div` and its 6-bit `div_counter` (64-cycle period). This is close but not exact for all DIV edge cases.
+## Known limitations
+- **TIMA overflow delay** — the hardware has a 1-machine-cycle delay between TIMA overflow and TMA reload/interrupt. This is not modelled.
+- **DIV obscure behaviour** — writing any value to DIV resets the internal 16-bit counter. The current model resets only the 8-bit `div` and its 6-bit `div_counter` (64-cycle period), which is close but not exact for all DIV edge cases.

@@ -153,7 +153,7 @@ mod tests {
             let mut cpu = make_cpu();
             set_not_taken_flags(&mut cpu, opcode);
 
-            let (instruction, _) = decode_instruction(&cpu, &bus, 0x0000, opcode);
+            let (instruction, _) = decode_instruction(&bus, 0x0000, opcode);
             let cycles = execute_instruction(&mut cpu, &mut bus, instruction, &mut noop_tick);
 
             if cycles != expected as u32 {
@@ -186,7 +186,7 @@ mod tests {
             let mut bus = make_cb_bus(cb_opcode);
             let mut cpu = make_cpu();
 
-            let (instruction, _) = decode_instruction(&cpu, &bus, 0x0000, 0xCB);
+            let (instruction, _) = decode_instruction(&bus, 0x0000, 0xCB);
             let cycles = execute_instruction(&mut cpu, &mut bus, instruction, &mut noop_tick);
 
             if cycles != expected as u32 {

@@ -43,7 +43,3 @@ fn exec_*(cpu_state: &mut CPUState, bus: &mut MemoryBus, ..., tick: &mut dyn FnM
 - Conditional variants: on condition-not-taken, only the fetch cycle fires (2 M-cycles for JR/JP, 3 for CALL, 2 for RET).
 - RST: behaves like CALL to a fixed vector.
 
-## Refactoring opportunities
-1. **Tick position inconsistency** — some executors call `tick` before the memory access, some after. Audit against hardware timing (tick should model the cycle on which the bus is actually driven).
-2. **`exec.rs` dispatch is verbose** — all 80+ arms are one-liners forwarding to submodule functions. A macro or table-driven approach would reduce boilerplate but is not strictly necessary.
-3. **`stack.rs` scope creep** — contains LDH instructions which are more "data transfer" than "stack". Consider moving to `data_transfer.rs` for consistency.

@@ -25,10 +25,6 @@
 `EmulatorFlags` is `Clone`; all fields have sensible defaults. If adding a new flag, add it here and parse it in `main.rs::parse_flags`.
 
 ## disasm.rs
-- Implements `MemoryRead` trait; both the local stub `MemoryBus` and the real `GameBoyMemoryBus` satisfy it.
-- **Refactor opportunity**: the local `MemoryBus` wrapper (marked deprecated in source) should be deleted. `main.rs` already has access to the ROM bytes and can construct a `GameBoyMemoryBus` in flat mode.
+- Implements `MemoryRead` trait on `MemoryBus`. The disassembler calls `bus.read(addr)` for opcode bytes.
 - `disasm_one` / `disasm_region` are self-contained and safe to call without CPU state.
 
-## Refactoring opportunities
-- `main.rs` redeclares all modules (`pub mod cpu; pub mod display;` …). Since `main.rs` is a separate binary crate, this works, but it means the library and binary compile modules independently. Better: make `main.rs` depend on the library crate (`use gb_emu::...`) the same way `lcd_display.rs` does.
-- CPU logging in `System::step` (lines ~175–222) is a large inline block. Consider extracting to a helper fn `log_instruction(...)`.

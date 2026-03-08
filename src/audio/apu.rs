@@ -29,6 +29,9 @@ pub trait AudioChannel {
     fn get_output(&self) -> f32;
     fn is_enabled(&self) -> bool;
     fn reset(&mut self);
+    /// Write a byte into the channel's wave pattern RAM.
+    /// Only meaningful for WaveChannel; other channels ignore this.
+    fn write_wave_byte(&mut self, _index: usize, _value: u8) {}
 }
 
 // Re-export channel types from channels module to avoid duplicate definitions
@@ -40,13 +43,10 @@ pub struct AudioProcessor {
     pub enabled: bool,
     pub master_volume: u8, // NR50
     pub output_select: u8, // NR51
-    wave_pattern: [u8; 32], // Wave pattern RAM (0xFF30-0xFF3F)
 }
 
 impl AudioProcessor {
     pub fn new() -> Self {
-        // Initialize channels
-        // Note: SquareChannel from channels.rs doesn't take channel_id
         AudioProcessor {
             channels: [
                 Box::new(SquareChannel::new()),
@@ -57,12 +57,11 @@ impl AudioProcessor {
             enabled: false,
             master_volume: 0x00,
             output_select: 0x00,
-            wave_pattern: [0; 32],
         }
     }
 
-    /// Clock the audio processor
-    /// Called at 2x CPU frequency (8388 Hz)
+    /// Clock the audio processor.
+    /// Called once per M-cycle (approximately 1 MHz) from System::step's tick closure.
     pub fn clock(&mut self) {
         for channel in &mut self.channels {
             channel.clock();
@@ -200,10 +199,9 @@ impl AudioProcessor {
     }
 
     fn write_wave_pattern(&mut self, address: u16, value: u8) {
-        // Wave pattern RAM at 0xFF30-0xFF3F
-        // Each address corresponds to one byte of the 32-byte wave pattern
+        // Wave pattern RAM at 0xFF30-0xFF3F: route writes to WaveChannel (index 2).
         let index = (address as usize) - 0xFF30;
-        self.wave_pattern[index] = value;
+        self.channels[2].write_wave_byte(index, value);
     }
 
     /// Check if audio is enabled

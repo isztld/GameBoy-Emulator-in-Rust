@@ -172,7 +172,7 @@ impl System {
             // mnemonic and length. The decoder does not modify state.
             use crate::cpu::decode::decode_instruction;
             let opcode = self.mmu.read(pre_pc);
-            let (instr, len) = decode_instruction(&self.cpu.state(), &self.mmu, pre_pc, opcode);
+            let (instr, len) = decode_instruction(&self.mmu, pre_pc, opcode);
 
             // Gather the raw bytes for the instruction.
             let mut raw_bytes = Vec::new();

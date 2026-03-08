@@ -30,9 +30,8 @@ All four channels are `Box<dyn AudioChannel>` stored in `AudioProcessor::channel
 
 ## Channel types (channels.rs)
 - `SquareChannel` — fields: `enabled`, `frequency`, `duty_cycle`, `volume`. No timer, no envelope, no sweep.
-- `WaveChannel` — fields: `enabled`, `frequency`, `volume`, `position`. No wave RAM read.
-- `NoiseChannel` — fields: `enabled`, `volume`, `lfsr`. No LFSR stepping.
-- `Channel` enum (`Square1`, `Square2`, `Wave`, `Noise`) — used only for identification; not currently referenced.
+- `WaveChannel` — fields: `enabled`, `volume`, `pattern: [u8; 32]`. Wave pattern bytes are written via `AudioChannel::write_wave_byte` (routed from `AudioProcessor::write_io` for 0xFF30-0xFF3F).
+- `NoiseChannel` — fields: `enabled`, `shift_register`, `clock_rate`. LFSR advances in `AudioChannel::clock` impl.
 
 ## What needs implementing
 Priority order for a functional APU:
@@ -44,8 +43,3 @@ Priority order for a functional APU:
 6. Implement NR50/NR51 mixing and master enable (NR52).
 7. Integrate with an audio output backend (e.g., `cpal`).
 
-## Refactoring opportunities
-1. `AudioProcessor` stores `wave_pattern: [u8; 32]` but it is never read or written. It belongs on `WaveChannel`.
-2. `SquareChannel` duplicates the `is_enabled()` method in both the `AudioChannel` impl and as a direct method — pick one.
-3. `Channel` enum is unused. Remove or use it to index into `AudioProcessor::channels`.
-4. `AudioProcessor::clock` is called at "2x CPU frequency (8388 Hz)" per the comment, but the actual call site in `System::step::tick` fires once per M-cycle (1 MHz). The comment is wrong.

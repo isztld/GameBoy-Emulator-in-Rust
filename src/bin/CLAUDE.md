@@ -45,8 +45,3 @@ cargo run --bin lcd_display -- --cpu-log path/to/rom.gb
 ```
 All `EmulatorFlags` from `src/config.rs` are supported (same flag parsing as the `gb_emu` binary).
 
-## Refactoring opportunities
-1. **Flag parsing duplicated** — both `main.rs` and `lcd_display.rs` have separate `parse_flags()` functions. Extract into a shared helper in `config.rs` or as a library function.
-2. **`AppHandler` is split across `resumed` / `window_event`** — the wgpu `Surface` is created in `resumed` but used in `window_event`. The `AppWindow` struct could be restructured to hold an `Option<Surface>` more cleanly.
-3. **Frame buffer upload allocates on every frame** — `wgpu::Queue::write_texture` is called with a raw byte slice derived from `pixels`. Pre-allocating a `Vec<u8>` scratch buffer and reusing it would avoid repeated allocation.
-4. **CPU info panel reads registers after `run_frame()`** — registers show the state *after* the frame, which may be in the middle of an instruction. This is fine for debugging but labelling it as "end-of-frame state" would be clearer.

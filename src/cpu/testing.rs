@@ -110,7 +110,7 @@ pub fn run_test_case(test: &TestCase) -> Result<(), String> {
     eprintln!("  PC={:04X}, opcode={:02X}", pc, opcode);
 
     // Decode: pass pc-1 so operand reads land at initial.pc, initial.pc+1, etc.
-    let (instruction, opcode_bytes) = decode_instruction(cpu.state(), &bus, pc.wrapping_sub(1), opcode);
+    let (instruction, opcode_bytes) = decode_instruction(&bus, pc.wrapping_sub(1), opcode);
     eprintln!("  instruction={:?}, opcode_bytes={}", instruction, opcode_bytes);
 
     // Advance PC past the operand bytes only (the opcode byte is already consumed).

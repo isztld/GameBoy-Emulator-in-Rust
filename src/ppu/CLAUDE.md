@@ -35,20 +35,11 @@ An internal counter that increments once per scanline on which the window is act
 - bit 5: X-flip
 - bit 4: palette (OBP0 or OBP1)
 
-**Typo**: `is_pallete_number()` — misspelled, should be `is_palette_number()`.
-
 OAM data lives in `MemoryBus::oam`; `VideoController::render_scanline` reads it directly from there.
 
 ## Renderer (rendering.rs)
-- `tiles: [Tile; 384]` — cached tile data (not currently kept in sync with VRAM writes; rendering reads VRAM directly from `MemoryBus`).
-- `decode_tile_row` and `decode_bitplanes` do the same thing — code duplication. `decode_tile_row` is used in old code paths; `decode_bitplanes` is the newer inline version. One should be removed.
+- `decode_bitplanes(lsb, msb)` decodes two bitplane bytes into 8 pixel colour indices (0-3). All tile rendering reads VRAM directly from `MemoryBus`.
 - Palette buffers `bg_palette`, `obj_palette_0`, `obj_palette_1` are `[u8; 4]` shade arrays (not raw register values).
 - `apply_palette(palette_reg, idx)` maps a 2-bit colour index through a GB palette byte.
-- `render_bg_scanline`, `render_window_scanline`, `render_sprites` are called in order by `render_scanline` in `video.rs`.
+- `render_background`, `render_window`, `render_sprites` are called in order by `render_scanline` in `video.rs`.
 
-## Refactoring opportunities
-1. **`decode_tile_row` duplication** — remove `decode_tile_row` (only used in dead/old code) and keep `decode_bitplanes`. Or rename `decode_bitplanes` to `decode_tile_row` and delete the original.
-2. **`tiles` array is stale** — the `Renderer::tiles` array is never written from VRAM. Rendering reads VRAM directly from `MemoryBus`. Either keep the array as a proper cache (updated on VRAM writes) or remove it entirely.
-3. **OAM typo** — `is_pallete_number` → `is_palette_number`.
-4. **`oam_dma_active` / `oam_dma_address` on `VideoController`** — DMA is actually managed by `MemoryBus`. These fields on the PPU side appear unused or redundant.
-5. **`Lcdc` bit accessor names** — `bg_tile_map_display()` (bit 0) vs `tile_map_select()` (bit 3) vs `tile_data_select()` (bit 4) naming is inconsistent with the Pan Docs convention. Consider renaming to match standard naming.

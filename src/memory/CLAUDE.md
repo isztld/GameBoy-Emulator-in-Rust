@@ -38,8 +38,8 @@ When `flat_mode = true`, all reads/writes address `bus.rom` as a 64 KiB flat arr
 - `advance_dma(n)` decrements the counter; while non-zero, CPU reads outside HRAM return 0xFF.
 - `ppu.handle_oam_dma` is called once per step but the copy is already complete.
 
-### Global serial log file — known design issue
-`SERIAL_LOG_FILE` is a `static Mutex<Option<...>>`. This means only one `MemoryBus` instance can log serial output at a time. Refactoring to an instance field requires plumbing the file through more of the codebase.
+### Serial log file
+`MemoryBus::serial_log_file: Option<Arc<Mutex<File>>>` is an instance field. Set it after construction (see `System::new`) to redirect serial bytes to a file instead of stdout.
 
 ## MemoryBankController (mbc.rs)
 - Supported: None (ROM-only), MBC1, MBC2, MBC3, MBC5, MBC6, MBC7, HuC1, HuC3.
@@ -47,8 +47,3 @@ When `flat_mode = true`, all reads/writes address `bus.rom` as a 64 KiB flat arr
 - MBC3 RTC registers are not implemented.
 - MBC5 uses a 9-bit bank number (`mbc5_rom_bank_low` + `mbc5_rom_bank_high`).
 
-## Refactoring opportunities
-1. **Serial log should be instance state** — move `SERIAL_LOG_FILE` static into `MemoryBus` as `serial_log_file: Option<Arc<Mutex<File>>>`.
-2. **Timer register writes are double-buffered unnecessarily** — `timer_tima_write` is stored on the bus but then immediately discarded in `System::step` (comment says TIMA is synced live via `io[0x05]`). Remove `timer_tima_write` field.
-3. **MBC6/7/HuC3 stubs** — identified in header parsing but fall back to no-banking. Document or implement.
-4. **`oam_dma_active` / `oam_dma_address` on VideoController** — partially duplicates DMA state held on `MemoryBus`. Consolidate ownership.

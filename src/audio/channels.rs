@@ -2,15 +2,6 @@
 
 use crate::audio::apu::AudioChannel;
 
-/// Channel types
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Channel {
-    Square1, // Channel 1: Square wave with sweep
-    Square2, // Channel 2: Square wave
-    Wave,    // Channel 3: Wave pattern
-    Noise,   // Channel 4: Noise
-}
-
 /// Square audio channel
 #[derive(Debug)]
 pub struct SquareChannel {
@@ -28,10 +19,6 @@ impl SquareChannel {
             duty_cycle: 0,
             volume: 0,
         }
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
@@ -74,10 +61,6 @@ impl WaveChannel {
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
@@ -113,10 +96,6 @@ impl NoiseChannel {
             shift_register: 0x7FFF,
             clock_rate: 0,
         }
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
@@ -177,6 +156,12 @@ impl AudioChannel for SquareChannel {
 }
 
 impl AudioChannel for WaveChannel {
+    fn write_wave_byte(&mut self, index: usize, value: u8) {
+        if index < self.pattern.len() {
+            self.pattern[index] = value;
+        }
+    }
+
     fn clock(&mut self) -> bool {
         true
     }

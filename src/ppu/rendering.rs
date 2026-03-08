@@ -6,26 +6,9 @@ use crate::memory::MemoryBus;
 use crate::ppu::video::Lcdc;
 use crate::display::{FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT};
 
-/// Tile data (16 bytes per tile for 8x8 monochrome)
-#[derive(Debug, Clone, Copy)]
-pub struct Tile {
-    pub data: [u8; 16],
-}
-
-impl Tile {
-    pub fn new() -> Self {
-        Tile { data: [0; 16] }
-    }
-
-    pub fn from_bytes(bytes: [u8; 16]) -> Self {
-        Tile { data: bytes }
-    }
-}
-
 /// Renderer state
 #[derive(Debug)]
 pub struct Renderer {
-    pub tiles: [Tile; 384], // 384 tiles (64 KB / 16 bytes per tile)
     pub bg_palette: [u8; 4], // BGP palette
     pub obj_palette_0: [u8; 4], // Object palette 0
     pub obj_palette_1: [u8; 4], // Object palette 1
@@ -34,22 +17,9 @@ pub struct Renderer {
 impl Renderer {
     pub fn new() -> Self {
         Renderer {
-            tiles: [Tile::new(); 384],
             bg_palette: [0xFC; 4], // Power-on default
             obj_palette_0: [0xFF; 4],
             obj_palette_1: [0xFF; 4],
-        }
-    }
-
-    /// Get a tile from VRAM
-    pub fn get_tile(&self, index: usize) -> Option<&Tile> {
-        self.tiles.get(index)
-    }
-
-    /// Set a tile in VRAM
-    pub fn set_tile(&mut self, index: usize, tile: Tile) {
-        if index < self.tiles.len() {
-            self.tiles[index] = tile;
         }
     }
 
