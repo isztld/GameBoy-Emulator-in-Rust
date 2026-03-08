@@ -131,10 +131,6 @@ impl System {
         // which the CPU is restricted to HRAM access.
         self.mmu.advance_dma(machine_cycles);
 
-        // OAM DMA: the per-cycle PPU state machine has already been driven by
-        // tick_io() in the closure above.
-        self.ppu.handle_oam_dma(&mut self.mmu);
-
         // Render the current scanline when the PPU signals HBlank entry.
         if self.ppu.scanline_ready {
             self.ppu.render_scanline(&self.mmu);

@@ -36,7 +36,6 @@ When `flat_mode = true`, all reads/writes address `bus.rom` as a 64 KiB flat arr
 ### OAM DMA
 - Writing 0xFF46 triggers DMA: the bus immediately copies 160 bytes from `src<<8` into `oam`. `oam_dma_cycles_remaining` is set to 160.
 - `advance_dma(n)` decrements the counter; while non-zero, CPU reads outside HRAM return 0xFF.
-- `ppu.handle_oam_dma` is called once per step but the copy is already complete.
 
 ### Serial log file
 `MemoryBus::serial_log_file: Option<Arc<Mutex<File>>>` is an instance field. Set it after construction (see `System::new`) to redirect serial bytes to a file instead of stdout.

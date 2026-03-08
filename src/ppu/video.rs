@@ -77,8 +77,6 @@ pub struct VideoController {
     pub(crate) scx: u8,         // Scroll X
     pub(crate) wy: u8,          // Window Y
     pub(crate) wx: u8,          // Window X
-    pub(crate) dma: u8,         // OAM DMA source
-    pub(crate) oam_dma_active: bool,
     // Rendering components
     pub(crate) renderer: Renderer,
     pub(crate) frame_buffer: SharedFrameBuffer,
@@ -93,6 +91,9 @@ pub struct VideoController {
     /// (when LY wraps to 0). Using LY-WY instead of this causes wrong tiles
     /// whenever the window is toggled or WY changes mid-frame.
     pub(crate) window_line: u8,
+    /// Tracks whether the LCD was enabled on the previous tick, so we can
+    /// detect the 1→0 edge (LCD just disabled) and blank the frame buffer.
+    pub(crate) lcd_was_enabled: bool,
 }
 
 impl VideoController {
@@ -108,13 +109,12 @@ impl VideoController {
             scx: 0,
             wy: 0,
             wx: 0,
-            dma: 0,
-            oam_dma_active: false,
             renderer: Renderer::new(),
             frame_buffer: create_shared_frame_buffer(),
             scanline_ready: false,
             vblank_entered: false,
             window_line: 0,
+            lcd_was_enabled: true,
         }
     }
 
@@ -131,13 +131,12 @@ impl VideoController {
             scx: 0,
             wy: 0,
             wx: 0,
-            dma: 0,
-            oam_dma_active: false,
             renderer: Renderer::new(),
             frame_buffer,
             scanline_ready: false,
             vblank_entered: false,
             window_line: 0,
+            lcd_was_enabled: true,
         }
     }
 
@@ -162,6 +161,10 @@ impl VideoController {
         self.wy   = io[0x4A]; // Window Y
         self.wx   = io[0x4B]; // Window X
 
+        // Detect the 1→0 edge: LCD was enabled last tick, disabled this tick.
+        let lcd_just_disabled = self.lcd_was_enabled && !self.lcdc.is_enabled();
+        self.lcd_was_enabled = self.lcdc.is_enabled();
+
         // When the LCD is disabled (LCDC bit 7 = 0) the PPU halts: LY is forced
         // to 0, mode is set to HBlank (mode 0), and the mode clock is cleared.
         // The PPU must NOT advance its state machine while disabled.
@@ -174,6 +177,16 @@ impl VideoController {
             self.update_stat();
             io[0x44] = self.ly;
             io[0x41] = 0x80 | (io[0x41] & 0x78) | (self.stat & 0x07);
+            // On the first cycle after LCD disable, fill the frame buffer with
+            // white and signal a completed frame so the display shows a blank screen
+            // instead of retaining the last rendered image.
+            if lcd_just_disabled {
+                let mut fb = self.frame_buffer.lock().unwrap();
+                fb.pixels.fill(0xFFFFFFFF_u32);
+                fb.mark_frame_ready();
+                drop(fb);
+                self.vblank_entered = true;
+            }
             return;
         }
 
@@ -185,25 +198,11 @@ impl VideoController {
         io[0x41] = 0x80 | (io[0x41] & 0x78) | (self.stat & 0x07);
     }
 
-    /// Advance the PPU by one machine cycle, including OAM DMA.
-    /// This is equivalent to calling `tick_io(&mut bus.io)` followed by an
-    /// OAM DMA check.  Used by tests and any call-site that has full bus
-    /// access; System::step() uses `tick_io` directly inside the tick closure
-    /// and calls `handle_oam_dma` separately.
+    /// Advance the PPU by one machine cycle.
+    /// Used by tests and any call-site that has full bus access;
+    /// System::step() uses `tick_io` directly inside the tick closure.
     pub fn update(&mut self, bus: &mut MemoryBus) {
-        if self.oam_dma_active {
-            self.perform_oam_dma(bus);
-        }
         self.tick_io(&mut bus.io);
-    }
-
-    /// Perform any pending OAM DMA transfer without advancing the state
-    /// machine.  Called from System::step() after the per-cycle tick closure
-    /// has already run `tick_io()`.
-    pub fn handle_oam_dma(&mut self, bus: &mut MemoryBus) {
-        if self.oam_dma_active {
-            self.perform_oam_dma(bus);
-        }
     }
 
     /// Inner mode state-machine step shared by tick_io and update.
@@ -311,16 +310,6 @@ impl VideoController {
         }
     }
 
-    fn perform_oam_dma(&mut self, bus: &mut MemoryBus) {
-        let source_base = (self.dma as u16) << 8;
-        for i in 0..160 {
-            let addr = source_base + i as u16;
-            let value = bus.read(addr);
-            bus.write(0xFE00 + i as u16, value);
-        }
-        self.oam_dma_active = false;
-    }
-
     /// Read from LCD status register (FF41)
     pub fn read_stat(&self) -> u8 {
         self.stat
@@ -335,12 +324,6 @@ impl VideoController {
     /// Check if LYC matches LY
     pub fn lyc_matches(&self) -> bool {
         self.ly == self.lyc
-    }
-
-    /// Request OAM DMA
-    pub fn start_oam_dma(&mut self, dma_source: u8) {
-        self.dma = dma_source;
-        self.oam_dma_active = true;
     }
 
     /// Get current LY (Y coordinate)
@@ -406,33 +389,6 @@ impl VideoController {
         }
     }
 
-    /// Render a complete frame to the frame buffer
-    pub fn render_frame(&self, bus: &MemoryBus) {
-        if !self.lcdc.is_enabled() {
-            return;
-        }
-
-        let bgp  = bus.io[0x47];
-        let obp0 = bus.io[0x48];
-        let obp1 = bus.io[0x49];
-
-        let mut fb = self.frame_buffer.lock().unwrap();
-        fb.clear();
-
-        self.renderer.render_frame(
-            &mut fb,
-            bus,
-            &self.lcdc,
-            self.scx,
-            self.scy,
-            self.wx,
-            self.wy,
-            &bus.oam,
-            bgp,
-            obp0,
-            obp1,
-        );
-    }
 }
 
 #[cfg(test)]

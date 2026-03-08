@@ -4,23 +4,15 @@
 
 use crate::memory::MemoryBus;
 use crate::ppu::video::Lcdc;
-use crate::display::{FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT};
+use crate::display::{FrameBuffer, SCREEN_WIDTH};
 
 /// Renderer state
 #[derive(Debug)]
-pub struct Renderer {
-    pub bg_palette: [u8; 4], // BGP palette
-    pub obj_palette_0: [u8; 4], // Object palette 0
-    pub obj_palette_1: [u8; 4], // Object palette 1
-}
+pub struct Renderer {}
 
 impl Renderer {
     pub fn new() -> Self {
-        Renderer {
-            bg_palette: [0xFC; 4], // Power-on default
-            obj_palette_0: [0xFF; 4],
-            obj_palette_1: [0xFF; 4],
-        }
+        Renderer {}
     }
 
     /// Decode two bitplane bytes into 8 pixel colour indices (0-3).
@@ -342,35 +334,6 @@ impl Renderer {
         }
     }
 
-    /// Render the entire frame to a frame buffer
-    /// This is a simplified version that renders all 144 scanlines
-    pub fn render_frame(
-        &self,
-        frame_buffer: &mut FrameBuffer,
-        bus: &MemoryBus,
-        lcdc: &Lcdc,
-        scroll_x: u8,
-        scroll_y: u8,
-        wx: u8,
-        wy: u8,
-        oam_bytes: &[u8; 160],
-        bgp: u8,
-        obp0: u8,
-        obp1: u8,
-    ) {
-        let mut window_line = 0u8;
-        let window_enable = lcdc.bg_tile_map_display() && lcdc.window_display() && wx < 167;
-        for y in 0..SCREEN_HEIGHT {
-            let scanline_y = y as u8;
-            self.render_scanline(frame_buffer, bus, scanline_y, lcdc,
-                                 scroll_x, scroll_y, wx, wy, oam_bytes,
-                                 window_line, bgp, obp0, obp1);
-            if window_enable && scanline_y >= wy {
-                window_line = window_line.wrapping_add(1);
-            }
-        }
-        frame_buffer.mark_frame_ready();
-    }
 }
 
 impl Default for Renderer {

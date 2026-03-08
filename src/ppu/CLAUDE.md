@@ -21,6 +21,7 @@ OamScan (80 M-cycles) → PixelTransfer (172 M-cycles) → HBlank (204 M-cycles)
 - On `PixelTransfer → HBlank`: sets `scanline_ready = true`. `System::step` then calls `render_scanline`.
 - On `LY 143 → 144`: sets `vblank_entered = true` (edge-triggered). `System::step` sets `frame_complete` and clears the flag.
 - LY 153 → 0 resets `window_line` to 0 for the next frame.
+- On LCDC bit 7 going 1→0 (LCD just disabled): `lcd_was_enabled` edge-detects the transition; the frame buffer is filled with white (0xFFFFFFFF) and `vblank_entered` is set so the display loop picks up the blank frame immediately.
 
 ### STAT interrupt sources
 Bit 3 (HBlank), bit 4 (VBlank), bit 5 (OAM), bit 6 (LYC=LY) of STAT can each trigger STAT interrupt (IF bit 1) on rising edge. Implemented in `tick_io`.
@@ -39,7 +40,6 @@ OAM data lives in `MemoryBus::oam`; `VideoController::render_scanline` reads it 
 
 ## Renderer (rendering.rs)
 - `decode_bitplanes(lsb, msb)` decodes two bitplane bytes into 8 pixel colour indices (0-3). All tile rendering reads VRAM directly from `MemoryBus`.
-- Palette buffers `bg_palette`, `obj_palette_0`, `obj_palette_1` are `[u8; 4]` shade arrays (not raw register values).
-- `apply_palette(palette_reg, idx)` maps a 2-bit colour index through a GB palette byte.
+- `apply_palette(palette_reg, idx)` maps a 2-bit colour index through a GB palette byte. Palette register values are passed as parameters to `render_scanline`; there are no cached palette fields on `Renderer`.
 - `render_background`, `render_window`, `render_sprites` are called in order by `render_scanline` in `video.rs`.
 
