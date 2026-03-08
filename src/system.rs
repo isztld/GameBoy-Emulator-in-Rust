@@ -4,6 +4,7 @@
 //! Interrupt handling lives in CPU::execute; the IF register (0xFF0F)
 //! and IE register (0xFFFF) are the source of truth.
 
+use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -279,6 +280,13 @@ impl System {
 
     pub fn get_audio_output(&self) -> crate::audio::apu::AudioOutput {
         self.apu.get_output()
+    }
+
+    /// Returns a clone of the shared audio sample buffer.
+    /// The buffer is populated by the APU at 44100 Hz (stereo f32 pairs).
+    /// Store the returned Arc in the audio stream callback to consume samples.
+    pub fn get_audio_buffer(&self) -> Arc<Mutex<VecDeque<(f32, f32)>>> {
+        self.apu.audio_buffer.clone()
     }
 
     /// Get the shared frame buffer

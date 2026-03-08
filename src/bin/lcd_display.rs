@@ -1,9 +1,13 @@
 //! GameBoy LCD display using wgpu (Metal on macOS) + Dear ImGui
 
+use std::collections::VecDeque;
 use std::env;
 use std::fs;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use imgui::*;
 use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
@@ -41,6 +45,12 @@ struct EmulatorState {
     total_frames: u64,
     /// Tracks when the last emulator frame was advanced, for speed throttling.
     last_emu_advance: Instant,
+    /// cpal audio stream — must be kept alive for the duration of emulation.
+    _audio_stream: Option<cpal::Stream>,
+    /// Software volume in [0.0, 1.0], shared with the cpal callback via atomic f32 bits.
+    volume: Arc<AtomicU32>,
+    /// Whether audio is muted (volume multiplier becomes 0).
+    muted: bool,
 }
 
 struct ImguiState {
@@ -128,6 +138,11 @@ impl AppWindow {
         let frame_buffer = system.get_frame_buffer();
         system.start();
 
+        // ── audio setup ─────────────────────────────────────────────────────
+        let audio_buffer = system.get_audio_buffer();
+        let volume = Arc::new(AtomicU32::new(1.0f32.to_bits()));
+        let audio_stream = setup_audio_stream(audio_buffer, volume.clone());
+
         let emu = EmulatorState {
             system,
             frame_buffer,
@@ -136,6 +151,9 @@ impl AppWindow {
             current_fps: 0.0,
             total_frames: 0,
             last_emu_advance: Instant::now(),
+            _audio_stream: audio_stream,
+            volume,
+            muted: false,
         };
 
         let mut app = Self {
@@ -357,6 +375,10 @@ impl ApplicationHandler for App {
                 let fps = app.emu.current_fps;
                 let frames = app.emu.total_frames;
 
+                // Read current volume for the slider (f32 stored as AtomicU32 bits).
+                let mut vol = f32::from_bits(app.emu.volume.load(Ordering::Relaxed));
+                let mut muted = app.emu.muted;
+
                 ui.window("Info")
                     .size([INFO_PANEL_WIDTH, GB_H + TITLE_BAR_H + 4.0], Condition::Always)
                     .position([GB_W + 16.0, 0.0], Condition::Always)
@@ -372,12 +394,28 @@ impl ApplicationHandler for App {
                         ui.text(format!("Scale:  {SCALE}x → {GB_W:.0}x{GB_H:.0}"));
                         ui.separator();
 
+                        // ── Audio controls ────────────────────────────────────
+                        ui.text("Audio");
+                        ui.set_next_item_width(INFO_PANEL_WIDTH - 16.0);
+                        if ui.slider("##vol", 0.0f32, 1.0f32, &mut vol) {
+                            // Slider moved: un-mute so the change is audible immediately.
+                            muted = false;
+                        }
+                        ui.same_line();
+                        ui.checkbox("Mute", &mut muted);
+                        ui.separator();
+
                         if running {
                             ui.text_colored([0.2, 1.0, 0.2, 1.0], "Running");
                         } else {
                             ui.text_colored([1.0, 0.3, 0.3, 1.0], "Stopped");
                         }
                     });
+
+                // Write back any changes made inside the closure.
+                let effective_vol = if muted { 0.0f32 } else { vol };
+                app.emu.volume.store(effective_vol.to_bits(), Ordering::Relaxed);
+                app.emu.muted = muted;
 
                 // ── render ────────────────────────────────────────────────────
                 if imgui.last_cursor != ui.mouse_cursor() {
@@ -473,6 +511,55 @@ impl ApplicationHandler for App {
             &Event::AboutToWait,
         );
     }
+}
+
+fn setup_audio_stream(
+    buffer: Arc<Mutex<VecDeque<(f32, f32)>>>,
+    volume: Arc<AtomicU32>,
+) -> Option<cpal::Stream> {
+    let host = cpal::default_host();
+    let device = host.default_output_device()?;
+    let config = device.default_output_config().ok()?;
+
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config.into(), buffer, volume),
+        cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config.into(), buffer, volume),
+        cpal::SampleFormat::U16 => build_stream::<u16>(&device, &config.into(), buffer, volume),
+        _ => return None,
+    }
+    .ok()?;
+
+    stream.play().ok()?;
+    Some(stream)
+}
+
+fn build_stream<T: cpal::Sample + cpal::SizedSample + cpal::FromSample<f32>>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    buffer: Arc<Mutex<VecDeque<(f32, f32)>>>,
+    volume: Arc<AtomicU32>,
+) -> Result<cpal::Stream, cpal::BuildStreamError> {
+    let channels = config.channels as usize;
+    device.build_output_stream(
+        config,
+        move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+            let vol = f32::from_bits(volume.load(Ordering::Relaxed));
+            let mut buf = buffer.lock().unwrap();
+            let mut i = 0;
+            while i < data.len() {
+                let (l, r) = buf.pop_front().unwrap_or((0.0, 0.0));
+                data[i] = T::from_sample(l * vol);
+                if channels > 1 && i + 1 < data.len() {
+                    data[i + 1] = T::from_sample(r * vol);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+        },
+        |e| eprintln!("audio stream error: {e}"),
+        None,
+    )
 }
 
 fn main() {

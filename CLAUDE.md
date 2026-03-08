@@ -1,7 +1,7 @@
 # GameBoy (DMG-01) Emulator — Project Root
 
 ## Overview
-A GameBoy (DMG-01) emulator written in Rust targeting macOS. Despite the repo name (`osx_rust_gba_emu`), this emulates the original DMG GameBoy, not the GBA. The SM83 CPU, full memory map, PPU, APU skeleton, Timer, and Joypad are all modelled.
+A GameBoy (DMG-01) emulator written in Rust targeting macOS. Despite the repo name (`osx_rust_gba_emu`), this emulates the original DMG GameBoy, not the GBA. The SM83 CPU, full memory map, PPU, APU, Timer, and Joypad are all modelled.
 
 ## Crate layout
 - **Library crate** (`src/lib.rs`) — re-exports everything; used by the `lcd_display` binary.
@@ -23,8 +23,4 @@ cargo run --bin gb_emu -- --disasm path/to/rom.gb
 - **Scanline rendering** — PPU sets `scanline_ready` on HBlank entry; `System::step` calls `render_scanline` then clears the flag.
 
 ## Known issues / refactoring opportunities
-1. **Duplicated module declarations** — `main.rs` and `lib.rs` both declare all modules (`pub mod cpu; pub mod display;` etc.). Only `lib.rs` should declare them; `main.rs` should use the library crate.
-2. **Global serial log static** — `MemoryBus::SERIAL_LOG_FILE` is a `static Mutex` (noted as known limitation in `system.rs`). Should be an instance field on `MemoryBus`.
-3. **`Joypad` struct is dead code** — button state is managed directly on `MemoryBus::joypad_action`/`joypad_dpad`. The `Joypad` struct in `input/joypad.rs` has stub implementations and is instantiated in `System` but never used.
-4. **Audio not implemented** — `AudioProcessor::enabled` starts `false`; channels produce no output. The APU clockin `system.step` advances nothing meaningful.
-5. **`disasm::MemoryBus` is deprecated** — a thin ROM wrapper that should be removed; callers should use `GameBoyMemoryBus` directly.
+1. **APU register routing gap** — `MemoryBus::write_io` does not forward 0xFF10–0xFF3F writes to the `AudioProcessor`; games will not trigger channels until this is wired up.

@@ -10,4 +10,3 @@ pub mod apu;
 pub mod channels;
 
 pub use apu::AudioProcessor;
-pub use channels::{SquareChannel, WaveChannel, NoiseChannel};
