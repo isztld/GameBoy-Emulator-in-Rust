@@ -111,6 +111,10 @@ impl Renderer {
     /// `window_line` is the PPU's internal window line counter (separate from LY).
     /// It increments only on scanlines where the window is actually visible, so it
     /// correctly handles mid-frame window enable/disable and WY changes.
+    /// `window_active` is set to `true` for every pixel position covered by the window.
+    /// On DMG, color index 0 is a valid window pixel (not transparent), so the caller
+    /// must use `window_active[x]` — not `out[x] != 0` — to decide whether to use
+    /// the window pixel or the background pixel.
     pub fn render_window(
         &self,
         bus: &MemoryBus,
@@ -120,6 +124,7 @@ impl Renderer {
         wy: u8,
         window_line: u8,
         out: &mut [u8; 160],
+        window_active: &mut [bool; 160],
     ) {
         // Window must be enabled and scanline must be at or below window Y.
         if !lcdc.window_display() || scanline_y < wy {
@@ -168,6 +173,7 @@ impl Renderer {
             }
 
             out[screen_x] = cached_row[window_x % 8];
+            window_active[screen_x] = true;
         }
     }
 
@@ -297,10 +303,13 @@ impl Renderer {
             [0u8; 160]
         };
 
-        // Window overlay — zero means "no window pixel here"
+        // Window overlay. On DMG color index 0 IS a valid window pixel (not transparent),
+        // so track coverage separately via window_active instead of checking for non-zero.
         let mut window_pixels = [0u8; 160];
+        let mut window_active = [false; 160];
         if lcdc.bg_tile_map_display() {
-            self.render_window(bus, scanline_y, lcdc, wx, wy, window_line, &mut window_pixels);
+            self.render_window(bus, scanline_y, lcdc, wx, wy, window_line,
+                               &mut window_pixels, &mut window_active);
         }
 
         // Sprite overlay — zero means "no sprite pixel here"
@@ -313,7 +322,9 @@ impl Renderer {
         let y = scanline_y as usize;
         for x in 0..SCREEN_WIDTH {
             // Raw (pre-palette) BG+Window index for priority comparisons.
-            let raw_bg_win = if window_pixels[x] != 0 { window_pixels[x] } else { bg_pixels[x] };
+            // Use window_active[x] — not `window_pixels[x] != 0` — because color
+            // index 0 is a valid (opaque) window pixel on DMG.
+            let raw_bg_win = if window_active[x] { window_pixels[x] } else { bg_pixels[x] };
             // BG+Window colour after BGP mapping.
             let bg_win_color = Self::apply_palette(bgp, raw_bg_win);
 

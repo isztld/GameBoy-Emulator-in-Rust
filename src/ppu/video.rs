@@ -162,6 +162,21 @@ impl VideoController {
         self.wy   = io[0x4A]; // Window Y
         self.wx   = io[0x4B]; // Window X
 
+        // When the LCD is disabled (LCDC bit 7 = 0) the PPU halts: LY is forced
+        // to 0, mode is set to HBlank (mode 0), and the mode clock is cleared.
+        // The PPU must NOT advance its state machine while disabled.
+        if !self.lcdc.is_enabled() {
+            self.ly = 0;
+            self.mode = PpuMode::HBlank;
+            self.mode_clock = 0;
+            // Still update STAT and sync the I/O registers so the CPU sees
+            // consistent values (LY=0, mode=0) while the LCD is off.
+            self.update_stat();
+            io[0x44] = self.ly;
+            io[0x41] = 0x80 | (io[0x41] & 0x78) | (self.stat & 0x07);
+            return;
+        }
+
         self.advance_mode(io);
         self.update_stat();
         // Sync LY and STAT bits 0-2 to the I/O array so the CPU sees current
