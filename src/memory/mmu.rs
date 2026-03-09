@@ -326,6 +326,10 @@ impl MemoryBus {
                 self.io[offset] = 0xE0 | (value & 0x1F);
             }
             0x10..=0x14 | 0x16..=0x19 | 0x1A..=0x1E | 0x20..=0x26 => {
+                // When APU is off, writes to NR10-NR51 are ignored (NR52 itself still writable).
+                if offset != 0x26 && self.io[0x26] & 0x80 == 0 {
+                    return;
+                }
                 // Audio registers — queue for APU; mirror into io[] with DMG open-bus masking.
                 // Write-only bits always read 1; trigger bit always reads 0; unused bits read 1.
                 let read_val = match offset {
