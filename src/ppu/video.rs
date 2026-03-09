@@ -211,6 +211,12 @@ impl VideoController {
         // values on every subsequent bus read within the same instruction.
         io[0x44] = self.ly;
         io[0x41] = 0x80 | (io[0x41] & 0x78) | (self.stat & 0x07);
+        // Expose the current OAM-scan row counter via io[0x7E] (address $FF7E,
+        // unused on DMG).  exec.rs reads this to determine when the OAM bug
+        // should fire — the bug requires mode_clock >= 1 (PPU has issued at
+        // least one OAM-bus read) so mode_clock = 0 (just entered OamScan from
+        // VBlank) does NOT trigger corruption, matching hardware behaviour.
+        io[0x7E] = self.mode_clock as u8;
     }
 
     /// Advance the PPU by one machine cycle.
