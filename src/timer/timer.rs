@@ -81,20 +81,32 @@ impl Timer {
     /// concurrently (e.g. during instruction execution).
     ///
     /// Writes the timer interrupt bit (bit 2) into io[0x0F] on TIMA overflow.
-    pub fn tick(&mut self, io: &mut [u8; 128]) {
+    /// Returns `true` when the APU frame sequencer should be clocked this M-cycle.
+    /// On hardware the frame sequencer is driven by the falling edge of DIV bit 4
+    /// (= M-cycle counter bit 10), which falls every 2048 M-cycles (512 Hz).
+    pub fn tick(&mut self, io: &mut [u8; 128]) -> bool {
+        let mut frame_seq_clk = false;
+
         // --- DIV ---
         self.div_counter += 1;
         if self.div_counter >= DIV_PERIOD {
             self.div_counter = 0;
+            let old_div = self.div;
             self.div = self.div.wrapping_add(1);
             // Keep the I/O DIV register in sync (direct write to avoid the
             // reset-on-write behaviour of the public bus.write path).
             io[0x04] = self.div;
+            // Frame sequencer fires on the falling edge of bit 4 of DIV.
+            // Bit 4 of DIV = bit 10 of the M-cycle counter; it falls every
+            // 32 DIV increments × 64 M-cycles = 2048 M-cycles (512 Hz).
+            if (old_div & 0x10) != 0 && (self.div & 0x10) == 0 {
+                frame_seq_clk = true;
+            }
         }
 
         // --- TIMA ---
         if !self.tac.enabled {
-            return;
+            return frame_seq_clk;
         }
 
         // If the CPU wrote to TIMA (0xFF05) mid-instruction, io[0x05] will differ
@@ -119,6 +131,8 @@ impl Timer {
             // Keep I/O TIMA register in sync.
             io[0x05] = self.tima;
         }
+
+        frame_seq_clk
     }
 
     pub fn reset(&mut self) {
@@ -130,11 +144,14 @@ impl Timer {
         self.tima_counter = 0;
     }
 
-    pub fn write_div(&mut self) {
-        // Any write to DIV resets both the register and the internal counter
-        // (the counter reset prevents a partial-period increment after the write).
+    /// Write to DIV (any value resets the counter).
+    /// Returns `true` if the reset causes a falling edge on DIV bit 4, which would
+    /// clock the APU frame sequencer (bit 4 was 1 before the reset, becomes 0 after).
+    pub fn write_div(&mut self) -> bool {
+        let falling_edge = (self.div & 0x10) != 0;
         self.div = 0;
         self.div_counter = 0;
+        falling_edge
     }
 
     pub fn write_tima(&mut self, value: u8) { self.tima = value; }

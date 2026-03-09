@@ -44,8 +44,7 @@ pub struct AudioProcessor {
     /// Shared sample buffer consumed by the cpal audio callback.
     pub audio_buffer: Arc<Mutex<VecDeque<(f32, f32)>>>,
 
-    // Frame sequencer
-    frame_seq_timer: u32,
+    // Frame sequencer — step only; the clock signal comes from the timer's DIV bit 4.
     frame_seq_step: u8,
 
     // High-pass filter state
@@ -67,7 +66,6 @@ impl AudioProcessor {
             panning: 0,
             sample_timer: 0.0,
             audio_buffer: Arc::new(Mutex::new(VecDeque::new())),
-            frame_seq_timer: 0,
             frame_seq_step: 0,
             hp_prev_l: 0.0,
             hp_prev_r: 0.0,
@@ -77,8 +75,9 @@ impl AudioProcessor {
     }
 
     /// Clock the APU once per M-cycle (~1,048,576 Hz).
-    /// Called from System::step's tick closure.
-    pub fn clock(&mut self) {
+    /// `frame_seq_clk` is true when the timer's DIV bit 4 just fell (every 2048 M-cycles),
+    /// which drives the 512 Hz frame sequencer.  Comes from `Timer::tick()`.
+    pub fn clock(&mut self, frame_seq_clk: bool) {
         if !self.enabled {
             self.accumulate_sample();
             return;
@@ -90,39 +89,40 @@ impl AudioProcessor {
         self.ch3.clock();
         self.ch4.clock();
 
-        // Frame sequencer: 2048 M-cycles per tick → 512 Hz
-        self.frame_seq_timer += 1;
-        if self.frame_seq_timer >= 2048 {
-            self.frame_seq_timer = 0;
-
-            // Save current step before incrementing (since step 7 → wrap to 0)
-            let step = self.frame_seq_step;
-
-            // Length counters decrement on even steps (0,2,4,6)
-            if step % 2 == 0 {
-                self.ch1.clock_length();
-                self.ch2.clock_length();
-                self.ch3.clock_length();
-                self.ch4.clock_length();
-            }
-
-            // Envelope: step 7 only (64 Hz)
-            if step == 7 {
-                self.ch1.clock_envelope();
-                self.ch2.clock_envelope();
-                self.ch4.clock_envelope();
-            }
-
-            // Sweep (CH1 only): steps 2 and 6 (128 Hz)
-            if step == 2 || step == 6 {
-                self.ch1.clock_sweep();
-            }
-
-            // Advance frame sequencer step
-            self.frame_seq_step = (step + 1) & 7;
+        // Frame sequencer driven by falling edge of DIV bit 4 (512 Hz)
+        if frame_seq_clk {
+            self.tick_frame_sequencer();
         }
 
         self.accumulate_sample();
+    }
+
+    /// Advance the frame sequencer by one step.  Called on the falling edge of DIV bit 4
+    /// during normal clocking, and also when a DIV write causes an immediate falling edge.
+    pub fn tick_frame_sequencer(&mut self) {
+        let step = self.frame_seq_step;
+
+        // Length counters: even steps 0,2,4,6 (256 Hz)
+        if step % 2 == 0 {
+            self.ch1.clock_length();
+            self.ch2.clock_length();
+            self.ch3.clock_length();
+            self.ch4.clock_length();
+        }
+
+        // Envelope: step 7 only (64 Hz)
+        if step == 7 {
+            self.ch1.clock_envelope();
+            self.ch2.clock_envelope();
+            self.ch4.clock_envelope();
+        }
+
+        // Sweep (CH1 only): steps 2 and 6 (128 Hz)
+        if step == 2 || step == 6 {
+            self.ch1.clock_sweep();
+        }
+
+        self.frame_seq_step = (step + 1) & 7;
     }
 
     fn accumulate_sample(&mut self) {
@@ -197,27 +197,31 @@ impl AudioProcessor {
     }
 
     fn write_audio_register(&mut self, address: u16, value: u8) {
+        // True when the next frame-sequencer event will clock the length counters
+        // (even steps 0,2,4,6).  Used for the DMG "extra length clock on enable" rule.
+        let next_clocks_len = self.frame_seq_step % 2 == 0;
+
         match address {
             0xFF10 => self.ch1.write_sweep(value),
             0xFF11 => self.ch1.write_duty_length(value),
             0xFF12 => self.ch1.write_envelope(value),
             0xFF13 => self.ch1.write_freq_lo(value),
-            0xFF14 => self.ch1.write_freq_hi(value),
+            0xFF14 => self.ch1.write_freq_hi(value, next_clocks_len),
             // 0xFF15 unused
             0xFF16 => self.ch2.write_duty_length(value),
             0xFF17 => self.ch2.write_envelope(value),
             0xFF18 => self.ch2.write_freq_lo(value),
-            0xFF19 => self.ch2.write_freq_hi(value),
+            0xFF19 => self.ch2.write_freq_hi(value, next_clocks_len),
             0xFF1A => self.ch3.write_dac_enable(value),
             0xFF1B => self.ch3.write_length(value),
             0xFF1C => self.ch3.write_volume(value),
             0xFF1D => self.ch3.write_freq_lo(value),
-            0xFF1E => self.ch3.write_freq_hi(value),
+            0xFF1E => self.ch3.write_freq_hi(value, next_clocks_len),
             // 0xFF1F unused
             0xFF20 => self.ch4.write_length(value),
             0xFF21 => self.ch4.write_envelope(value),
             0xFF22 => self.ch4.write_poly(value),
-            0xFF23 => self.ch4.write_trigger(value),
+            0xFF23 => self.ch4.write_trigger(value, next_clocks_len),
             0xFF24 => self.master_volume = value,
             0xFF25 => self.panning = value,
             0xFF26 => {
@@ -233,6 +237,9 @@ impl AudioProcessor {
                     self.ch3.pattern = saved_pattern;
                     self.master_volume = 0;
                     self.panning = 0;
+                } else if !was && self.enabled {
+                    // Power on: frame sequencer restarts from step 0.
+                    self.frame_seq_step = 0;
                 }
             }
             _ => {}

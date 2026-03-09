@@ -89,11 +89,27 @@ impl SquareChannel {
         self.frequency = (self.frequency & 0x700) | (val as u16);
     }
 
-    pub fn write_freq_hi(&mut self, val: u8) {
+    /// `next_clocks_len`: true when the next frame-sequencer step will clock the length counter
+    /// (i.e. `frame_seq_step` is even: 0, 2, 4, 6).  Needed for the DMG "extra clock on enable"
+    /// and "extra clock on trigger-with-reload" edge cases.
+    pub fn write_freq_hi(&mut self, val: u8, next_clocks_len: bool) {
         self.frequency = (self.frequency & 0xFF) | (((val & 7) as u16) << 8);
+        let old_len_enabled = self.length_enabled;
         self.length_enabled = (val & 0x40) != 0;
+
+        // Extra length clock when length-enable transitions 0→1 in first half of period.
+        if next_clocks_len && !old_len_enabled && self.length_enabled {
+            self.clock_length();
+        }
+
         if (val & 0x80) != 0 {
+            let was_zero = self.length == 0;
             self.trigger();
+            // If length was reloaded by trigger and length-enable is on in first half,
+            // clock the freshly-loaded counter once (covers tests 8 & 9).
+            if next_clocks_len && self.length_enabled && was_zero {
+                self.clock_length();
+            }
         }
     }
 
@@ -260,11 +276,21 @@ impl WaveChannel {
         self.frequency = (self.frequency & 0x700) | (val as u16);
     }
 
-    pub fn write_freq_hi(&mut self, val: u8) {
+    pub fn write_freq_hi(&mut self, val: u8, next_clocks_len: bool) {
         self.frequency = (self.frequency & 0xFF) | (((val & 7) as u16) << 8);
+        let old_len_enabled = self.length_enabled;
         self.length_enabled = (val & 0x40) != 0;
+
+        if next_clocks_len && !old_len_enabled && self.length_enabled {
+            self.clock_length();
+        }
+
         if (val & 0x80) != 0 {
+            let was_zero = self.length == 0;
             self.trigger();
+            if next_clocks_len && self.length_enabled && was_zero {
+                self.clock_length();
+            }
         }
     }
 
@@ -392,10 +418,20 @@ impl NoiseChannel {
         self.divisor_code = val & 7;
     }
 
-    pub fn write_trigger(&mut self, val: u8) {
+    pub fn write_trigger(&mut self, val: u8, next_clocks_len: bool) {
+        let old_len_enabled = self.length_enabled;
         self.length_enabled = (val & 0x40) != 0;
+
+        if next_clocks_len && !old_len_enabled && self.length_enabled {
+            self.clock_length();
+        }
+
         if (val & 0x80) != 0 {
+            let was_zero = self.length == 0;
             self.trigger();
+            if next_clocks_len && self.length_enabled && was_zero {
+                self.clock_length();
+            }
         }
     }
 

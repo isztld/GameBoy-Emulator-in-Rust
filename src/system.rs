@@ -119,9 +119,9 @@ impl System {
             let Self { cpu, mmu, ppu, timer, apu, .. } = self;
 
             let mut tick = |io: &mut [u8; 128]| {
-                timer.tick(io);
+                let frame_seq_clk = timer.tick(io);
                 ppu.tick_io(io);
-                apu.clock();
+                apu.clock(frame_seq_clk);
             };
 
             cpu.execute(mmu, &mut tick)
@@ -146,8 +146,13 @@ impl System {
         // The Timer struct is the authoritative source for timer state; writes
         // to 0xFF04-0xFF07 go through write_io which queues them here.
         if self.mmu.timer_div_reset {
-            self.timer.write_div();
+            let div_falling_edge = self.timer.write_div();
             self.mmu.timer_div_reset = false;
+            // DIV write can produce a falling edge on bit 4, which would normally
+            // clock the frame sequencer mid-instruction on real hardware.
+            if div_falling_edge && self.apu.enabled {
+                self.apu.tick_frame_sequencer();
+            }
         }
         if let Some(v) = self.mmu.timer_tma_write.take() {
             self.timer.write_tma(v);
