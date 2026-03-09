@@ -7,7 +7,8 @@ const DUTY_TABLE: [[u8; 8]; 4] = [
     [0, 1, 1, 1, 1, 1, 1, 0], // 75%
 ];
 
-const NOISE_DIVISORS: [u32; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
+// T-cycle divisors [8,16,32,48,64,80,96,112] divided by 4 for M-cycle clocking
+const NOISE_DIVISORS: [u32; 8] = [2, 4, 8, 12, 16, 20, 24, 28];
 
 /// Square wave channel (used for CH1 and CH2; CH1 uses the sweep fields)
 #[derive(Debug)]
@@ -272,7 +273,7 @@ impl WaveChannel {
         if self.length == 0 {
             self.length = 256;
         }
-        self.timer = (((2048 - self.frequency) * 2) as i32).max(1);
+        self.timer = (((2048 - self.frequency) / 2) as i32).max(1);
         self.position = 0;
     }
 
@@ -285,7 +286,7 @@ impl WaveChannel {
     pub fn clock(&mut self) {
         self.timer -= 1;
         if self.timer <= 0 {
-            self.timer = (((2048 - self.frequency) * 2) as i32).max(1);
+            self.timer = (((2048 - self.frequency) / 2) as i32).max(1);
             self.position = (self.position + 1) & 31;
             let byte_idx = self.position / 2;
             self.current_sample = if self.position & 1 == 0 {

@@ -106,18 +106,15 @@ impl AudioProcessor {
                 self.ch4.clock_length();
             }
 
-            match step {
-                0 | 2 | 4 | 7 => {
-                    self.ch1.clock_envelope();
-                    self.ch2.clock_envelope();
-                    self.ch4.clock_envelope();
-                }
-                _ => {} // steps 1,3,5,6: no envelope
+            // Envelope: step 7 only (64 Hz)
+            if step == 7 {
+                self.ch1.clock_envelope();
+                self.ch2.clock_envelope();
+                self.ch4.clock_envelope();
             }
 
-            // Sweep (CH1 only), on steps: 0,1,3,4,5,7  
-            // (i.e., *not* on steps 2 and 6)
-            if step != 2 && step != 6 {
+            // Sweep (CH1 only): steps 2 and 6 (128 Hz)
+            if step == 2 || step == 6 {
                 self.ch1.clock_sweep();
             }
 
