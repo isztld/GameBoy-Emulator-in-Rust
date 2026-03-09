@@ -105,9 +105,9 @@ impl SquareChannel {
         if (val & 0x80) != 0 {
             let was_zero = self.length == 0;
             self.trigger();
-            // If length was reloaded by trigger and length-enable is on in first half,
-            // clock the freshly-loaded counter once (covers tests 8 & 9).
-            if next_clocks_len && self.length_enabled && was_zero {
+            // Extra clock after trigger reloads length: only when length-enable went
+            // 0→1 in this same write (same condition as the first extra clock).
+            if next_clocks_len && !old_len_enabled && self.length_enabled && was_zero {
                 self.clock_length();
             }
         }
@@ -288,7 +288,7 @@ impl WaveChannel {
         if (val & 0x80) != 0 {
             let was_zero = self.length == 0;
             self.trigger();
-            if next_clocks_len && self.length_enabled && was_zero {
+            if next_clocks_len && !old_len_enabled && self.length_enabled && was_zero {
                 self.clock_length();
             }
         }
@@ -429,7 +429,7 @@ impl NoiseChannel {
         if (val & 0x80) != 0 {
             let was_zero = self.length == 0;
             self.trigger();
-            if next_clocks_len && self.length_enabled && was_zero {
+            if next_clocks_len && !old_len_enabled && self.length_enabled && was_zero {
                 self.clock_length();
             }
         }
