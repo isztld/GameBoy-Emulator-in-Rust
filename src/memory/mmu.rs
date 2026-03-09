@@ -353,6 +353,32 @@ impl MemoryBus {
                     _    => 0xFF,
                 };
                 self.io[offset] = read_val;
+                // APU power-off: reset all NR10-NR51 register readback values to
+                // their "zero-written" state (open-bus bits remain 1, channel bits 0).
+                if offset == 0x26 && value & 0x80 == 0 {
+                    self.io[0x10] = 0x80;
+                    self.io[0x11] = 0x3F;
+                    self.io[0x12] = 0x00;
+                    self.io[0x13] = 0xFF;
+                    self.io[0x14] = 0xBF;
+                    // 0x15 unchanged (open bus, always 0xFF)
+                    self.io[0x16] = 0x3F;
+                    self.io[0x17] = 0x00;
+                    self.io[0x18] = 0xFF;
+                    self.io[0x19] = 0xBF;
+                    self.io[0x1A] = 0x7F;
+                    self.io[0x1B] = 0xFF;
+                    self.io[0x1C] = 0x9F;
+                    self.io[0x1D] = 0xFF;
+                    self.io[0x1E] = 0xBF;
+                    // 0x1F unchanged (open bus, always 0xFF)
+                    self.io[0x20] = 0xFF;
+                    self.io[0x21] = 0x00;
+                    self.io[0x22] = 0x00;
+                    self.io[0x23] = 0xBF;
+                    self.io[0x24] = 0x00;
+                    self.io[0x25] = 0x00;
+                }
                 self.apu_writes.push((address, value));
             }
             0x30..=0x3F => {
