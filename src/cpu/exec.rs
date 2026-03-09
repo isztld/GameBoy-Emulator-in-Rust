@@ -37,9 +37,11 @@ fn apply_oam_bug(oam: &mut [u8; 160], scan_k: u8) {
 
 /// Check and apply the OAM bug for a single bus address touched during Mode 2.
 /// `scan_k` and `pre_mode` are captured *before* M-cycle 2 executes.
+/// The OAM bus covers $FE00–$FEFF; addresses outside this range (e.g. $FF00+)
+/// do NOT cause a bus conflict with the PPU, so they must be excluded.
 #[inline(always)]
 fn maybe_oam_bug(bus: &mut MemoryBus, pre_mode: u8, scan_k: u8, addr: u16) {
-    if pre_mode == 0x02 && scan_k >= 1 && addr >= 0xFE00 {
+    if pre_mode == 0x02 && scan_k >= 1 && addr >= 0xFE00 && addr <= 0xFEFF {
         apply_oam_bug(&mut bus.oam, scan_k);
     }
 }
@@ -140,24 +142,35 @@ pub fn execute_instruction(cpu_state: &mut CPUState, bus: &mut MemoryBus, instru
         // Stack instructions
         Instruction::RET => stack::exec_ret(cpu_state, bus, tick),
         Instruction::RETI => stack::exec_reti(cpu_state, bus, tick),
-        // POP reads from SP and SP+1; either access in $FE00-$FEFF triggers the OAM bug.
+        // POP reads from SP (M-cycle 2) and SP+1 (M-cycle 3).  Either access in
+        // $FE00-$FEFF triggers the OAM bug, but the bug fires at most ONCE per
+        // instruction regardless of how many reads land in that range.
+        // Using a single OR-combined check prevents double-calling apply_oam_bug
+        // (which would XOR the same bytes twice and restore the original values).
         Instruction::PopR16 { reg } => {
             let pre_mode = bus.io[0x41] & 0x03;
             let scan_k   = bus.io[0x7E];
             let sp       = cpu_state.registers.sp;
             let cycles   = stack::exec_pop_r16(cpu_state, reg, bus, tick);
-            maybe_oam_bug(bus, pre_mode, scan_k, sp);
-            maybe_oam_bug(bus, pre_mode, scan_k, sp.wrapping_add(1));
+            let sp1 = sp.wrapping_add(1);
+            if pre_mode == 0x02 && scan_k >= 1
+                && ((sp  >= 0xFE00 && sp  <= 0xFEFF)
+                 || (sp1 >= 0xFE00 && sp1 <= 0xFEFF))
+            {
+                apply_oam_bug(&mut bus.oam, scan_k);
+            }
             cycles
         }
-        // PUSH writes to SP-1 and SP-2; either access in $FE00-$FEFF triggers the OAM bug.
+        // PUSH first does an internal phantom bus access at SP (before any decrement)
+        // during M-cycle 2.  The OAM bug fires if SP is in $FE00-$FEFF.  Using SP
+        // directly (one call) avoids the double-XOR cancellation that would occur if
+        // we checked both SP-1 and SP-2 and both happen to be in range.
         Instruction::PushR16 { reg } => {
             let pre_mode = bus.io[0x41] & 0x03;
             let scan_k   = bus.io[0x7E];
             let sp       = cpu_state.registers.sp;
             let cycles   = stack::exec_push_r16(cpu_state, reg, bus, tick);
-            maybe_oam_bug(bus, pre_mode, scan_k, sp.wrapping_sub(1));
-            maybe_oam_bug(bus, pre_mode, scan_k, sp.wrapping_sub(2));
+            maybe_oam_bug(bus, pre_mode, scan_k, sp);
             cycles
         }
         Instruction::RST { target } => stack::exec_rst(cpu_state, target, bus, tick),
