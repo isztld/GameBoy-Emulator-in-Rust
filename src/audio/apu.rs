@@ -20,10 +20,6 @@ impl AudioOutput {
     pub fn new() -> Self {
         AudioOutput { left: 0.0, right: 0.0 }
     }
-
-    pub fn silence() -> Self {
-        AudioOutput { left: 0.0, right: 0.0 }
-    }
 }
 
 impl Default for AudioOutput {
@@ -43,7 +39,7 @@ pub struct AudioProcessor {
     pub panning: u8,        // NR51
 
     // Sample accumulation
-    sample_timer: f32,
+    sample_timer: f64,
 
     /// Shared sample buffer consumed by the cpal audio callback.
     pub audio_buffer: Arc<Mutex<VecDeque<(f32, f32)>>>,
@@ -51,6 +47,12 @@ pub struct AudioProcessor {
     // Frame sequencer
     frame_seq_timer: u32,
     frame_seq_step: u8,
+
+    // High-pass filter state
+    hp_prev_l: f32,
+    hp_prev_r: f32,
+    hp_out_l: f32,
+    hp_out_r: f32,
 }
 
 impl AudioProcessor {
@@ -67,6 +69,10 @@ impl AudioProcessor {
             audio_buffer: Arc::new(Mutex::new(VecDeque::new())),
             frame_seq_timer: 0,
             frame_seq_step: 0,
+            hp_prev_l: 0.0,
+            hp_prev_r: 0.0,
+            hp_out_l: 0.0,
+            hp_out_r: 0.0,
         }
     }
 
@@ -78,37 +84,45 @@ impl AudioProcessor {
             return;
         }
 
+        // Clock all channels once per M-cycle
         self.ch1.clock();
         self.ch2.clock();
         self.ch3.clock();
         self.ch4.clock();
 
-        // Frame sequencer: ticks every 8192 M-cycles → 128 Hz
+        // Frame sequencer: 2048 M-cycles per tick → 512 Hz
         self.frame_seq_timer += 1;
-        if self.frame_seq_timer >= 8192 {
+        if self.frame_seq_timer >= 2048 {
             self.frame_seq_timer = 0;
-            match self.frame_seq_step {
-                0 | 4 => {
-                    self.ch1.clock_length();
-                    self.ch2.clock_length();
-                    self.ch3.clock_length();
-                    self.ch4.clock_length();
-                }
-                2 | 6 => {
-                    self.ch1.clock_length();
-                    self.ch2.clock_length();
-                    self.ch3.clock_length();
-                    self.ch4.clock_length();
-                    self.ch1.clock_sweep();
-                }
-                7 => {
+
+            // Save current step before incrementing (since step 7 → wrap to 0)
+            let step = self.frame_seq_step;
+
+            // Length counters decrement on even steps (0,2,4,6)
+            if step % 2 == 0 {
+                self.ch1.clock_length();
+                self.ch2.clock_length();
+                self.ch3.clock_length();
+                self.ch4.clock_length();
+            }
+
+            match step {
+                0 | 2 | 4 | 7 => {
                     self.ch1.clock_envelope();
                     self.ch2.clock_envelope();
                     self.ch4.clock_envelope();
                 }
-                _ => {}
+                _ => {} // steps 1,3,5,6: no envelope
             }
-            self.frame_seq_step = (self.frame_seq_step + 1) & 7;
+
+            // Sweep (CH1 only), on steps: 0,1,3,4,5,7  
+            // (i.e., *not* on steps 2 and 6)
+            if step != 2 && step != 6 {
+                self.ch1.clock_sweep();
+            }
+
+            // Advance frame sequencer step
+            self.frame_seq_step = (step + 1) & 7;
         }
 
         self.accumulate_sample();
@@ -120,7 +134,19 @@ impl AudioProcessor {
         let cycles_per_sample = 1_048_576.0 / 44100.0;
         if self.sample_timer >= cycles_per_sample {
             self.sample_timer -= cycles_per_sample;
-            let (left, right) = self.mix();
+            let (mut left, mut right) = self.mix();
+
+            // High-pass filter to remove DC offset
+            const HP_ALPHA: f32 = 0.998943; // 0.999958, use 0.998943 for MGB&CGB
+            self.hp_out_l = left - self.hp_prev_l + HP_ALPHA * self.hp_out_l;
+            self.hp_out_r = right - self.hp_prev_r + HP_ALPHA * self.hp_out_r;
+            self.hp_prev_l = left;
+            self.hp_prev_r = right;
+
+            // use filtered output for buffer
+            left = self.hp_out_l;
+            right = self.hp_out_r;
+
             let mut buf = self.audio_buffer.lock().unwrap();
             // Cap buffer to ~4 frames of audio to prevent unbounded growth
             if buf.len() < 8192 {
