@@ -160,6 +160,8 @@ impl System {
         for (addr, val) in self.mmu.apu_writes.drain(..) {
             self.apu.write_io(addr, val);
         }
+        // Keep NR52 read-back (0xFF26) current: channel enable bits are dynamic.
+        self.mmu.io[0x26] = self.apu.nr52_value();
 
         // Optionally log the instruction that just ran, including raw opcode bytes and a
         // disassembly‑style mnemonic. This mirrors the output format of the

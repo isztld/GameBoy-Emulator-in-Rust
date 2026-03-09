@@ -224,11 +224,13 @@ impl AudioProcessor {
                 let was = self.enabled;
                 self.enabled = (value & 0x80) != 0;
                 if was && !self.enabled {
-                    // Power off: reset all channel registers
+                    // Power off: reset all channel registers; wave RAM is preserved (DMG behaviour)
+                    let saved_pattern = self.ch3.pattern;
                     self.ch1 = SquareChannel::new();
                     self.ch2 = SquareChannel::new();
                     self.ch3 = WaveChannel::new();
                     self.ch4 = NoiseChannel::new();
+                    self.ch3.pattern = saved_pattern;
                     self.master_volume = 0;
                     self.panning = 0;
                 }
@@ -245,6 +247,18 @@ impl AudioProcessor {
 
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Compute the current NR52 byte value for CPU read-back.
+    /// Bit 7 = master enable; bits 6-4 always read 1; bits 3-0 = channel enable status.
+    pub fn nr52_value(&self) -> u8 {
+        let mut val = 0x70u8; // bits 6-4 open bus
+        if self.enabled    { val |= 0x80; }
+        if self.ch1.is_enabled() { val |= 0x01; }
+        if self.ch2.is_enabled() { val |= 0x02; }
+        if self.ch3.is_enabled() { val |= 0x04; }
+        if self.ch4.is_enabled() { val |= 0x08; }
+        val
     }
 }
 

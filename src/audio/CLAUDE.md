@@ -80,16 +80,16 @@ Each side sums up to 4 channel outputs (each 0.0–1.0), divides by 4, multiplie
 - CH1 frequency sweep: clocked at 128 Hz by frame sequencer steps 2,6; overflow disables channel.
 
 ### WaveChannel (CH3)
-- Period timer: reloads `(2048 - frequency) * 2`; advances 32-position wave RAM cursor.
+- Period timer: reloads `(2048 - frequency) / 2` M-cycles; advances 32-position wave RAM cursor.
 - Wave RAM: 16 bytes (`pattern: [u8;16]`), each byte = 2 nibbles = 2 4-bit samples.
 - Volume shift: 0=mute, 1=100%, 2=50%, 3=25%.
 
 ### NoiseChannel (CH4)
 - 15-bit LFSR; optional 7-bit width mode (NR43 bit 3).
 - Period timer: `NOISE_DIVISORS[divisor_code] << clock_shift` M-cycles.
-  `NOISE_DIVISORS = [8,16,32,48,64,80,96,112]`.
+  `NOISE_DIVISORS = [2,4,8,12,16,20,24,28]` (T-cycle values divided by 4 for M-cycle clocking).
 - Volume envelope same as square channels.
 
 ## Known limitations
-- No APU read-back (NR52 channel status bits always 0).
-- No obscure power-on state for wave RAM.
+- APU register open-bus bits (e.g. NR10 bit 7 always 1) not fully enforced on read.
+- No obscure wave RAM access restrictions when CH3 is active (CPU writes go directly to pattern array).

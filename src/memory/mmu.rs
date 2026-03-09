@@ -112,6 +112,10 @@ impl MemoryBus {
         io[0x24] = 0x77; // NR50
         io[0x25] = 0xF3; // NR51
         io[0x26] = 0xF1; // NR52
+        // Wave RAM power-on state (DMG, matching WaveChannel::new())
+        let wave_init = [0x84u8, 0x40, 0x43, 0xAA, 0x2D, 0x78, 0x92, 0x3C,
+                         0x60, 0x59, 0xAD, 0xA1, 0x0C, 0xE2, 0xF3, 0x44];
+        io[0x30..0x40].copy_from_slice(&wave_init);
         io[0x40] = 0x91; // LCDC
         // STAT: bits 3-6 writable by software; start in mode 1 (VBlank) with no
         // interrupt-select bits armed so no spurious STAT IRQ fires immediately.

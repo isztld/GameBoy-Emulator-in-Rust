@@ -232,7 +232,9 @@ impl WaveChannel {
             timer: 1,
             position: 0,
             volume_shift: 0,
-            pattern: [0; 16],
+            // DMG power-on wave RAM state (left by boot ROM)
+            pattern: [0x84, 0x40, 0x43, 0xAA, 0x2D, 0x78, 0x92, 0x3C,
+                      0x60, 0x59, 0xAD, 0xA1, 0x0C, 0xE2, 0xF3, 0x44],
             current_sample: 0,
             length: 0,
             length_enabled: false,
