@@ -272,13 +272,13 @@
     fn test_ldh_ind_c_a() {
         let mut cpu = init_cpu_state();
         cpu.registers.set_a(0x42);
-        cpu.registers.set_c(0x10);
+        cpu.registers.set_c(0x80); // use HRAM (0xFF80) — no open-bus masking
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
         let cycles = exec_ldh_ind_c_a(&mut cpu, &mut bus, &mut noop_tick);
 
         assert_eq!(cycles, 2);
-        assert_eq!(bus.read(0xFF10), 0x42);
+        assert_eq!(bus.read(0xFF80), 0x42);
     }
 
     #[test]
@@ -300,10 +300,10 @@
         cpu.registers.set_a(0x77);
         let mut bus = MemoryBus::new(vec![0; 32768]);
 
-        let cycles = exec_ldh_ind_imm8_a(&mut cpu, 0x10, &mut bus, &mut noop_tick);
+        let cycles = exec_ldh_ind_imm8_a(&mut cpu, 0x80, &mut bus, &mut noop_tick); // use HRAM
 
         assert_eq!(cycles, 3);
-        assert_eq!(bus.read(0xFF10), 0x77);
+        assert_eq!(bus.read(0xFF80), 0x77);
     }
 
     #[test]

@@ -323,8 +323,33 @@ impl MemoryBus {
                 self.io[offset] = 0xE0 | (value & 0x1F);
             }
             0x10..=0x14 | 0x16..=0x19 | 0x1A..=0x1E | 0x20..=0x26 => {
-                // Audio registers — queue for APU; also mirror into io[] for read-back.
-                self.io[offset] = value;
+                // Audio registers — queue for APU; mirror into io[] with DMG open-bus masking.
+                // Write-only bits always read 1; trigger bit always reads 0; unused bits read 1.
+                let read_val = match offset {
+                    0x10 => (value & 0x7F) | 0x80, // NR10: bit 7 open
+                    0x11 => (value & 0xC0) | 0x3F, // NR11: length write-only → lower 6 read 1
+                    0x12 => value,                  // NR12: fully readable
+                    0x13 => 0xFF,                   // NR13: freq LSB write-only
+                    0x14 => (value & 0x40) | 0xBF, // NR14: only length-enable readable
+                    0x16 => (value & 0xC0) | 0x3F, // NR21
+                    0x17 => value,                  // NR22
+                    0x18 => 0xFF,                   // NR23: write-only
+                    0x19 => (value & 0x40) | 0xBF, // NR24
+                    0x1A => (value & 0x80) | 0x7F, // NR30: only DAC enable readable
+                    0x1B => 0xFF,                   // NR31: write-only
+                    0x1C => (value & 0x60) | 0x9F, // NR32: only volume code readable
+                    0x1D => 0xFF,                   // NR33: write-only
+                    0x1E => (value & 0x40) | 0xBF, // NR34
+                    0x20 => 0xFF,                   // NR41: write-only
+                    0x21 => value,                  // NR42
+                    0x22 => value,                  // NR43
+                    0x23 => (value & 0x40) | 0xBF, // NR44
+                    0x24 => value,                  // NR50
+                    0x25 => value,                  // NR51
+                    0x26 => (value & 0x80) | 0x70, // NR52: bit 7 + open-bus bits 6-4
+                    _    => 0xFF,
+                };
+                self.io[offset] = read_val;
                 self.apu_writes.push((address, value));
             }
             0x30..=0x3F => {
