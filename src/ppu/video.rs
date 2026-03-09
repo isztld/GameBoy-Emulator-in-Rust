@@ -161,8 +161,9 @@ impl VideoController {
         self.wy   = io[0x4A]; // Window Y
         self.wx   = io[0x4B]; // Window X
 
-        // Detect the 1→0 edge: LCD was enabled last tick, disabled this tick.
+        // Detect LCD enable/disable edges.
         let lcd_just_disabled = self.lcd_was_enabled && !self.lcdc.is_enabled();
+        let lcd_just_enabled  = !self.lcd_was_enabled && self.lcdc.is_enabled();
         self.lcd_was_enabled = self.lcdc.is_enabled();
 
         // When the LCD is disabled (LCDC bit 7 = 0) the PPU halts: LY is forced
@@ -188,6 +189,20 @@ impl VideoController {
                 self.vblank_entered = true;
             }
             return;
+        }
+
+        // On the 0→1 edge (LCD just turned on): reset the PPU to the beginning
+        // of line 0 in OAM-scan mode.  Hardware behaviour: the first line after
+        // LCD-on takes 110 M-cycles (not 114) before LY increments.  Modelling
+        // this as mode_clock=1 (one M-cycle already elapsed) means OAM scan
+        // runs for 19 ticks instead of 20, giving 19+43+51 = 113 total ticks;
+        // advance_mode() increments mode_clock immediately, so LY becomes 1 at
+        // tick 112 from the LCD-on event — exactly what hardware does.
+        if lcd_just_enabled {
+            self.ly = 0;
+            self.mode = PpuMode::OamScan;
+            self.mode_clock = 1;
+            self.window_line = 0;
         }
 
         self.advance_mode(io);
