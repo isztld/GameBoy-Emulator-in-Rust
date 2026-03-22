@@ -2,6 +2,9 @@
 
 A GameBoy (DMG-01) emulator written in Rust, implementing the SM83 CPU, memory management, PPU, APU, and all standard peripherals.
 
+![Screenshot](images/in_game.png)
+![Screenshot](images/cpu_instrs.png)
+
 ## Features
 
 - **CPU**: SM83 (GBZ80-compatible) instruction set
