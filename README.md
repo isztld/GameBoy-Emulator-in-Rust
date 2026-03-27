@@ -20,61 +20,82 @@ A GameBoy (DMG-01) emulator written in Rust, implementing the SM83 CPU, memory m
 cargo build --release
 ```
 
-## Usage
+## Binaries
+
+### `lcd_display` — windowed display (recommended)
+
+Runs a ROM in an interactive window with audio.
 
 ```bash
-cargo run --release -- <rom_file> [options]
+cargo run --bin lcd_display -- <rom_file>
 ```
 
-## Command-Line Flags
+### `gb_emu` — headless runner
+
+Runs a ROM in a headless loop. Also supports disassembly and CPU testing.
+
+```bash
+cargo run --bin gb_emu -- [options] <rom_file>
+```
+
+**Note:** Options must come before `<rom_file>`.
+
+## Command-Line Flags (`gb_emu` only)
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--cpu-log [file]` | Enable CPU instruction logging to the specified file | `cpu_log.txt` |
-| `--serial-log [file]` | Enable serial output (console) logging to the specified file | `serial_log.txt` |
-| `--help`, `-h` | Show help message and exit | - |
+| `--cpu-log [file]` | Enable CPU instruction logging | `cpu_log.txt` |
+| `--serial-log [file]` | Enable serial output logging | `serial_log.txt` |
+| `--disasm` | Disassemble ROM from 0x0100 instead of running | — |
+| `--cycle-limit <n>` | Stop after executing `n` cycles | — |
+| `--cpu-json-test <dir>` | Run CPU tests from a GameboyCPUTests directory | — |
+| `--help`, `-h` | Show help and exit | — |
 
 ## Examples
 
-Run a ROM with CPU logging enabled:
+Run a ROM in the windowed display:
 
 ```bash
-cargo run --release -- game.gb --cpu-log
+cargo run --bin lcd_display -- game.gb
 ```
 
-Run with both CPU and serial output logging:
+Run headless:
 
 ```bash
-cargo run --release -- game.gb --cpu-log cpu.log --serial-log serial.log
+cargo run --bin gb_emu -- game.gb
 ```
 
-Show help:
+Run with CPU logging:
 
 ```bash
-cargo run --release -- --help
+cargo run --bin gb_emu -- --cpu-log game.gb
 ```
 
-## Logging Behavior
+Run with CPU and serial logging to custom files:
 
-### CPU Instruction Log (`--cpu-log`)
+```bash
+cargo run --bin gb_emu -- --cpu-log cpu.log --serial-log serial.log game.gb
+```
 
-When enabled, the emulator writes each executed instruction to the log file in the following format:
+Disassemble a ROM:
+
+```bash
+cargo run --bin gb_emu -- --disasm game.gb
+```
+
+Run CPU JSON tests:
+
+```bash
+cargo run --bin gb_emu -- --cpu-json-test path/to/GameboyCPUTests/
+```
+
+## CPU Instruction Log format (`--cpu-log`)
+
+Each executed instruction is written as:
 
 ```
 PC=$1234 A:$00 F:00 BC:$0013 DE:$00D8 HL:$014D SP:$FFFE CYCLES:4
 ```
-
-Fields:
-- `PC`: Program counter (16-bit hex)
-- `A`: Accumulator (8-bit hex)
-- `F`: Flags register (8-bit hex)
-- `BC`, `DE`, `HL`: Register pairs (16-bit hex)
-- `SP`: Stack pointer (16-bit hex)
-- `CYCLES`: CPU cycles consumed by the instruction
-
-### Serial Output Log (`--serial-log`)
-
-When enabled, all GameBoy serial output (typically written to stdout via the SC register) is captured to this file instead of the terminal. This includes any character output from ROMs that use the serial interface for debug output.
 
 ## Memory Map
 
@@ -99,6 +120,8 @@ src/
 ├── audio/          # APU implementation
 │   ├── apu.rs      # Audio processor
 │   └── channels.rs # Audio channels
+├── bin/
+│   └── lcd_display.rs  # Windowed display (wgpu + Dear ImGui)
 ├── cpu/            # CPU implementation
 │   ├── cpu.rs      # CPU struct and execution
 │   ├── decode.rs   # Instruction decoding
@@ -117,7 +140,9 @@ src/
 │   └── video.rs
 ├── system.rs       # Main system controller
 ├── timer.rs        # Timer module
-└── main.rs         # Entry point
+├── config.rs       # EmulatorFlags
+├── disasm.rs       # SM83 disassembler
+└── main.rs         # gb_emu binary entry point
 ```
 
 ## License
