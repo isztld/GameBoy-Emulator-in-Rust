@@ -2,6 +2,8 @@
 
 A GameBoy (DMG-01) emulator written in Rust, implementing the SM83 CPU, memory management, PPU, APU, and all standard peripherals.
 
+> **Platform:** macOS only. The `lcd_display` binary uses wgpu with the Metal backend and is not supported on other platforms.
+
 ![Screenshot](images/in_game.png)
 ![Screenshot](images/cpu_instrs.png)
 
